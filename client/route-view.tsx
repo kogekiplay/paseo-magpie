@@ -1,9 +1,9 @@
-import { useSyncExternalStore } from "react";
-import { Text, View } from "react-native";
+import { memo, useEffect, useState, useSyncExternalStore } from "react";
+import { ActivityIndicator, Text, View } from "react-native";
 import { Icon } from "@getpaseo/plugin/client/ui";
 import type { PluginButtonContentProps, PluginButtonIconProps } from "@getpaseo/plugin/client";
 import type { PluginTheme } from "@getpaseo/plugin";
-import { durationLabel, routeFailed, type RouteState } from "../shared/route.ts";
+import { byteLabel, durationLabel, routeFailed, type RouteState } from "../shared/route.ts";
 import { magpieIcon } from "../shared/icon.ts";
 import type { RouteStore } from "./route-store.ts";
 
@@ -26,11 +26,36 @@ function stateTitle(state: RouteState): string {
   return "关联中";
 }
 
+// Use the same platform spinner as Paseo instead of a JS-driven Animated.loop. Memoization
+// keeps byte-counter updates from rendering/restarting the running indicator.
+const RequestIcon = memo(function RequestIcon({ active, size, color }: {
+  active: boolean; size: number; color: string;
+}) {
+  return (
+    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }} accessibilityLabel={active ? "Magpie 请求中" : "Magpie"}>
+      <Icon icon={magpieIcon} size={active ? size * 0.65 : size} color={color} />
+      {active ? <ActivityIndicator animating size={size} color={color} style={{ position: "absolute" }} /> : null}
+    </View>
+  );
+});
+
+function ContentAge({ at, active, theme }: { at?: number; active: boolean; theme: PluginTheme }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!at || !active) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [at, active]);
+  if (!at || !active) return null;
+  return <Field label="距最近内容" value={`${Math.max(0, Math.floor((now - at) / 1_000))} 秒`} theme={theme} />;
+}
+
 export function createRouteSurfaces(store: RouteStore) {
   function RouteIcon({ size, color }: PluginButtonIconProps) {
     // Subscribe only while Paseo mounts this composer's icon. Opening the details shares it.
-    useSyncExternalStore(store.subscribe, store.getSnapshot);
-    return <Icon icon={magpieIcon} size={size} color={color} />;
+    const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+    return <RequestIcon active={Boolean(state.route && !state.route.done && !routeFailed(state.route))} size={size} color={color} />;
   }
 
   function RouteContent({ theme, layout }: PluginButtonContentProps) {
@@ -61,6 +86,10 @@ export function createRouteSurfaces(store: RouteStore) {
               </Text>
             </View>
             <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 28 }}>
+                <Field label="已接收" value={byteLabel(route.bytes)} theme={theme} />
+                <ContentAge at={route.contentAt} active={!route.done} theme={theme} />
+              </View>
               <Field label="请求模型" value={route.asked} theme={theme} />
               <Field label="路由组" value={route.group} theme={theme} />
               <Field label="响应模型" value={route.served} theme={theme} />
@@ -72,10 +101,6 @@ export function createRouteSurfaces(store: RouteStore) {
                 <Field label="请求服务层级" value={route.asked_tier} theme={theme} />
                 <Field label="路由服务层级" value={route.tier} theme={theme} />
                 <Field label="响应服务层级" value={route.tier_served} theme={theme} />
-              </View>
-              <View style={{ flexDirection: "row", gap: 28 }}>
-                <Field label="首字延迟" value={durationLabel(route.ttft_ms)} theme={theme} />
-                <Field label={route.done ? "总耗时" : "耗时（已上报）"} value={durationLabel(route.ms)} theme={theme} />
               </View>
               <Field label="请求时间（本地）" value={new Date(route.time).toLocaleString("zh-CN", { hour12: false })} theme={theme} />
               <Field label="HTTP 状态" value={route.status === undefined ? undefined : String(route.status)} theme={theme} />

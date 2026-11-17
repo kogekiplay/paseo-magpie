@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createRouteStore } from "./route-store.ts";
 import {
-  durationLabel, routeLabel, connectingRoute, type RouteState,
+  byteLabel, durationLabel, routePillLabels, connectingRoute, type RouteState,
 } from "../shared/route.ts";
 
 const live: RouteState = {
@@ -22,14 +22,14 @@ test("a mounted icon and popover share one stream; last unmount cancels it", () 
     starts++;
     emit = onState;
     return () => { stops++; };
-  }, (state) => labels.push(routeLabel(state)));
+  }, (state) => labels.push(routePillLabels(state).model ?? "实际路由"));
   assert.equal(starts, 0);
   const icon = store.subscribe(() => {});
   const popover = store.subscribe(() => {});
   assert.equal(starts, 1);
   emit(live);
   assert.equal(store.getSnapshot(), live);
-  assert.equal(labels.at(-1), "actual …");
+  assert.equal(labels.at(-1), "actual");
   icon();
   assert.equal(stops, 0);
   popover();
@@ -93,12 +93,33 @@ test("each agent owns its own state even when requests finish out of order", () 
 });
 
 test("labels distinguish actual, pending, failed and auxiliary routes", () => {
-  assert.equal(routeLabel(live), "actual …");
-  assert.equal(routeLabel({ ...live, route: { ...live.route!, model: undefined } }), "路由中 …");
-  assert.equal(routeLabel({ ...live, route: { ...live.route!, kind: "title", done: true } }), "辅助 · actual");
-  assert.equal(routeLabel({ ...live, route: { ...live.route!, done: true, status: 500 } }), "actual · 失败");
+  assert.equal(routePillLabels(live).model, "actual");
+  assert.equal(routePillLabels({ ...live, route: { ...live.route!, model: undefined } }).model, "路由中");
+  assert.equal(routePillLabels({ ...live, route: { ...live.route!, kind: "title", done: true } }).provider, "辅助 · vendor");
+  assert.equal(routePillLabels({ ...live, route: { ...live.route!, done: true, status: 500 } }).traffic, "失败");
   assert.equal(durationLabel(), "未提供");
   assert.equal(durationLabel(0), "0 ms");
   assert.equal(durationLabel(700), "700 ms");
   assert.equal(durationLabel(1234), "1.23 s");
+});
+
+test("byte labels update across B/KB/MB without dropping the provider or inventing missing counts", () => {
+  for (const [bytes, expected] of [[0, "0 B"], [12, "12 B"], [1023, "1023 B"], [1024, "1.0 KB"],
+    [1536, "1.5 KB"], [1048576, "1.0 MB"], [3145728, "3.0 MB"]] as const) {
+    assert.equal(byteLabel(bytes), expected);
+    assert.equal(routePillLabels({ ...live, route: { ...live.route!, bytes } }).traffic, expected);
+  }
+  for (const bytes of [undefined, NaN, Infinity, -1, 0.5]) assert.equal(byteLabel(bytes), "未提供");
+  assert.equal(routePillLabels({ ...live, route: { ...live.route!, bytes: 12, done: true } }).traffic, "12 B");
+});
+
+test("native pill values separate provider, model and bytes to avoid the host's 160px cap", () => {
+  assert.deepEqual(routePillLabels({ ...live, route: { ...live.route!, model: "kurumiai/gpt-6.1-sol", bytes: 12345 } }), {
+    provider: "kurumiai", model: "gpt-6.1-sol", traffic: "12.1 KB",
+  });
+  assert.deepEqual(routePillLabels(connectingRoute), { provider: "实际路由" });
+  assert.deepEqual(routePillLabels({ ...live, route: { ...live.route!, model: undefined } }), {
+    provider: "实际路由", model: "路由中", traffic: "字节未提供",
+  });
+  assert.equal(routePillLabels({ ...live, route: { ...live.route!, done: true, error: "upstream failed", bytes: 0 } }).traffic, "0 B · 失败");
 });

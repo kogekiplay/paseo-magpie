@@ -4,7 +4,7 @@ import { createRouteReader, createRouteWatcher, type RouteAgent } from "./route.
 import { routeStateSchema, type RouteState, type SessionRoute } from "../shared/route.ts";
 
 const input = { agentId: "test-agent", workspaceId: "test-workspace" };
-const config = { url: "http://localhost:3425/proxy/", timeoutMs: 100, apiKey: "test-gateway-key" };
+const config = { url: "https://gateway.example.test/proxy/", timeoutMs: 100, apiKey: "test-gateway-key" };
 const agent: RouteAgent = {
   workspaceId: input.workspaceId, provider: "codex", sessionId: "native-session-A", archived: false,
 };

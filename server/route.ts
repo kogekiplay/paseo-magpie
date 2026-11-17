@@ -8,6 +8,7 @@ import {
 } from "../shared/route.ts";
 import { readConfig, type MagpieConfig } from "./config.ts";
 import { redact } from "./source.ts";
+import { createTrafficReader } from "./traffic.ts";
 
 const responseSchema = z.object({
   session: z.string(),
@@ -77,6 +78,7 @@ function safeRoute(route: SessionRoute, key?: string): SessionRoute {
 export function createRouteReader(deps: Dependencies) {
   const loadConfig = deps.config ?? readConfig;
   const request = deps.request ?? fetch;
+  const readTraffic = createTrafficReader(request);
   return async (
     input: RouteInput, signal: AbortSignal, cursor?: { session: string; seq: number },
   ): Promise<{ state: RouteState; seq?: number; session?: string }> => {
@@ -119,6 +121,9 @@ export function createRouteReader(deps: Dependencies) {
       if (!parsed.success) throw new RouteError("Magpie 路由格式不兼容，请检查网关版本。");
       if (parsed.data.session !== session) throw new RouteError("Magpie 返回的会话不匹配，已忽略此路由。");
 
+      const route = parsed.data.route
+        ? await readTraffic(config, session, parsed.data.route, controller.signal) : null;
+
       // Refresh again after the network response: reopening/moving/deleting an agent may happen
       // while the request is in flight. A late response must never be published into a new session.
       const current = await deps.resolve(input);
@@ -128,7 +133,6 @@ export function createRouteReader(deps: Dependencies) {
           ? { state: "connecting", message: "会话已变化，正在重新关联…", route: null }
           : waiting(current, input) };
       }
-      const route = parsed.data.route;
       return {
         session,
         seq: parsed.data.seq,
@@ -173,6 +177,7 @@ export function createRouteWatcher(deps: Dependencies) {
         cursor = result.session && result.seq !== undefined
           ? { session: result.session, seq: result.seq } : undefined;
         await publish(result.state);
+        if (result.state.route && !result.state.route.done) interval = 500;
         if (!cursor) interval = 1_500;
       } catch (error) {
         if (context.signal.aborted) return;

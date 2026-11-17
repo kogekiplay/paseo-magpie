@@ -32,6 +32,8 @@ export const routeSchema = z.object({
   error: text.optional(),
   ms: z.number().nonnegative().optional(),
   ttft_ms: z.number().nonnegative().optional(),
+  bytes: z.number().int().nonnegative().safe().optional(),
+  contentAt: z.number().int().nonnegative().safe().optional(),
 });
 
 export const routeInputSchema = z.object({
@@ -70,15 +72,29 @@ export function routeFailed(route: SessionRoute): boolean {
   return Boolean(route.error) || (route.done && (route.status ?? 0) >= 400);
 }
 
-export function routeLabel(state: RouteState): string {
-  if (state.state === "error") return "路由离线";
+/** Native composer pills have a host-owned 160px cap. Keep their independent values separate
+ * so response size cannot be ellipsized behind a long provider/model path. */
+export function routePillLabels(state: RouteState): { provider: string; model?: string; traffic?: string } {
   const route = state.route;
-  if (!route) return "路由";
-  // Never substitute the requested model for one Magpie actually attempted.
-  const actual = route.model?.replace(/^[^/]+\//, "");
-  const label = actual || (route.done ? "路由未知" : "路由中");
-  const compact = label.length > 30 ? `${label.slice(0, 29)}…` : label;
-  return `${route.kind ? "辅助 · " : ""}${compact}${routeFailed(route) ? " · 失败" : route.done ? "" : " …"}`;
+  if (!route) return { provider: state.state === "error" ? "路由离线" : "实际路由" };
+  const actual = route.model;
+  const slash = actual?.indexOf("/") ?? -1;
+  const provider = actual && slash > 0 ? actual.slice(0, slash) : "实际路由";
+  const model = actual && slash > 0 ? actual.slice(slash + 1) : actual || (route.done ? "未知模型" : "路由中");
+  return {
+    provider: `${route.kind ? "辅助 · " : ""}${provider}`,
+    model,
+    traffic: routeFailed(route) ? `${route.bytes === undefined ? "" : `${byteLabel(route.bytes)} · `}失败`
+      : route.bytes === undefined ? "字节未提供" : byteLabel(route.bytes),
+  };
+}
+
+export function byteLabel(bytes?: number): string {
+  if (bytes === undefined || !Number.isSafeInteger(bytes) || bytes < 0) return "未提供";
+  // Same 1024-based boundaries and one decimal as Magpie's routing view, with familiar units.
+  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
+  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(1)} KB`;
+  return `${bytes} B`;
 }
 
 export function durationLabel(ms?: number): string {

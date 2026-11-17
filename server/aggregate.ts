@@ -44,7 +44,6 @@ interface Bucket {
   kind: Kind;
   plan: string;
   readings: Reading[];
-  stale: number;
 }
 
 function kindOf(span: Span): Kind | undefined {
@@ -91,14 +90,11 @@ export function aggregateReport(group: QuotaGroup, now = Date.now()): UsageRepor
       seen.add(key);
       let bucket = buckets.get(key);
       if (!bucket) {
-        bucket = { key, kind, plan, readings: [], stale: 0 };
+        bucket = { key, kind, plan, readings: [] };
         buckets.set(key, bucket);
       }
-      if (quota.asOf && span.resetsAt && Date.parse(span.resetsAt) <= now) {
-        bucket.stale++;
-      } else {
-        bucket.readings.push({ quota, span });
-      }
+      if (quota.asOf && span.resetsAt && Date.parse(span.resetsAt) <= now) continue;
+      bucket.readings.push({ quota, span });
     }
   }
 
@@ -157,11 +153,6 @@ export function aggregateReport(group: QuotaGroup, now = Date.now()): UsageRepor
     })));
     balances.push(...(mapped.balances || []).map((balance) => ({ ...balance, id: `${id}-balance` })));
     details.push(...(mapped.details || []).map((detail) => ({ ...detail, id: `${id}-${detail.id}` })));
-    details.push({
-      id: `${id}-scope`,
-      label: combined.name,
-      value: `${readings.length} 个账号${bucket.stale ? `，${bucket.stale} 个过期读数未计入` : ""}`,
-    });
     for (const { quota } of readings) contributors.add(quota);
   }
   if (!contributors.size) {
@@ -170,19 +161,9 @@ export function aggregateReport(group: QuotaGroup, now = Date.now()): UsageRepor
       detail: "当前没有至少两个账号可合并的同类额度窗口，请查看各账号明细。",
     });
   }
-  details.push({
-    id: "scope", label: "汇总范围",
-    value: `共 ${group.members.length} 个账号，${contributors.size} 个账号参与汇总`,
-  }, {
-    id: "method", label: "汇总口径",
-    value: "同套餐的百分比取平均；有总量的额度累加用量和上限。单账号独有的窗口保留在明细中。",
-  });
   const unread = group.members.length - readable.length;
   if (unread) details.push({
     id: "unread", label: "未计入", value: `${unread} 个账号没有有效读数`, tone: "warning",
-  });
-  if (windows.some((window) => window.resetsAt)) details.push({
-    id: "reset-note", label: "重置提示", value: "显示参与账号中最早的重置时间，不代表所有账号同时恢复。",
   });
   const readTimes = [...contributors].map((q) => Date.parse(q.readAt || q.asOf || ""))
     .filter(Number.isFinite);
