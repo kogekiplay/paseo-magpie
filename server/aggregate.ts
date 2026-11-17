@@ -148,7 +148,12 @@ export function aggregateReport(group: QuotaGroup, now = Date.now()): UsageRepor
     });
     if (mapped.status !== "available") continue;
     const id = `aggregate-${hashAccountKey(bucket.key).slice(0, 24)}`;
-    windows.push(...mapped.windows.map((window) => ({ ...window, id, summary: true })));
+    windows.push(...mapped.windows.map((window) => ({
+      ...window,
+      id,
+      shortLabel: windowName(first, ""),
+      summary: true,
+    })));
     balances.push(...(mapped.balances || []).map((balance) => ({ ...balance, id: `${id}-balance` })));
     details.push(...(mapped.details || []).map((detail) => ({ ...detail, id: `${id}-${detail.id}` })));
     details.push({

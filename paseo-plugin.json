@@ -1,6 +1,7 @@
 {
   "id": "paseo-magpie",
   "name": "Magpie Usage",
+  "icon": "assets/magpie.png",
   "description": "Show Magpie account quotas and balances in native Usage.",
   "translations": {
     "zh-CN": {

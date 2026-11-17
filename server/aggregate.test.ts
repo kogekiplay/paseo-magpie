@@ -28,6 +28,7 @@ test("matches the mixed-plan example: two Team accounts leave 38%, Pro Lite stay
   assert.equal(report.windows.find((window) => window.label.startsWith("5 小时"))?.remainingPct, 100);
   assert.equal(report.windows.find((window) => window.label.startsWith("7 天"))?.remainingPct, 38);
   assert.ok(report.windows.every((window) => window.label.includes("Team")));
+  assert.deepEqual(report.windows.map((window) => window.shortLabel), ["5 小时", "7 天"]);
   assert.ok(report.details?.some((detail) => detail.id === "scope" && detail.value.includes("2 个账号参与")));
 });
 
