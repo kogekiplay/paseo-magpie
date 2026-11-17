@@ -151,6 +151,7 @@ export function aggregateReport(group: QuotaGroup, now = Date.now()): UsageRepor
     windows.push(...mapped.windows.map((window) => ({
       ...window,
       id,
+      label: windowName(first, ""),
       shortLabel: windowName(first, ""),
       summary: true,
     })));
