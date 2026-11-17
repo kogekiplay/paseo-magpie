@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { Text, View } from "react-native";
-import { Icon, ScrollView } from "@getpaseo/plugin/client/ui";
+import { Icon } from "@getpaseo/plugin/client/ui";
 import type { PluginButtonContentProps, PluginButtonIconProps } from "@getpaseo/plugin/client";
 import type { PluginTheme } from "@getpaseo/plugin";
 import { durationLabel, routeFailed, type RouteState } from "../shared/route.ts";
@@ -40,10 +40,7 @@ export function createRouteSurfaces(store: RouteStore) {
       ? theme.colors.statusDanger : route && !route.done
         ? theme.colors.accent : theme.colors.foregroundMuted;
     return (
-      <ScrollView
-        style={{ maxHeight: layout.compact ? 560 : 620, backgroundColor: theme.colors.surface0 }}
-        contentContainerStyle={{ padding: layout.compact ? 16 : 20, gap: 16, width: layout.compact ? "100%" : 380, maxWidth: "100%" }}
-      >
+      <View style={{ gap: 16, width: layout.compact ? "100%" : 380, maxWidth: "100%" }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Icon icon={magpieIcon} size={22} />
           <Text style={{ flex: 1, color: theme.colors.foreground, fontSize: 16, fontWeight: "600" }}>Magpie 路由</Text>
@@ -111,7 +108,7 @@ export function createRouteSurfaces(store: RouteStore) {
         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, lineHeight: 17 }}>
           自动更新 · 仅当前会话的近期记录{"\n"}Magpie 路由接口不提供所用账号。
         </Text>
-      </ScrollView>
+      </View>
     );
   }
   return { RouteIcon, RouteContent };
