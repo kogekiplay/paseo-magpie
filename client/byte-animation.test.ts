@@ -18,14 +18,16 @@ function setup() {
   } };
 }
 
-test("byte animation rises smoothly between confirmed readings without overshooting", () => {
+test("byte animation has a restrained jelly settle and ends at the confirmed reading", () => {
   const { animation, frames, pending, advance } = setup();
   animation.update("request-A", 12, true);
   assert.equal(frames.at(-1), 12);
   animation.update("request-A", 2048, true);
-  advance(90);
+  advance(80);
+  assert.equal(frames.at(-1), 2048);
+  advance(80);
   assert.ok(frames.at(-1)! > 12 && frames.at(-1)! < 2048);
-  advance(90);
+  advance(160);
   assert.equal(frames.at(-1), 2048);
   assert.equal(pending.size, 0);
 });
@@ -52,7 +54,7 @@ test("new readings replace in-flight targets and disposal prevents late updates"
   const mid = frames.at(-1)!;
   animation.update("request-A", 2000, true);
   assert.equal(frames.at(-1), mid);
-  advance(180);
+  advance(320);
   assert.equal(frames.at(-1), 2000);
   animation.update("request-A", 3000, true);
   const delayed = [...pending];
