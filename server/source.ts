@@ -134,7 +134,7 @@ export function createMagpieUsageSource(deps: Dependencies = {}): UsageSourceReg
   return {
     id: "magpie",
     label: "Magpie",
-    icon: "assets/magpie.png",
+    icon: "assets/magpie.svg",
     input: inputSchema,
     discover: async (scope) => {
       // A gateway can route one session across several accounts. Global discovery must not leak

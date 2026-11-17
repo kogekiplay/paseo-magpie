@@ -2,7 +2,7 @@
 
 把 [Magpie](https://github.com/yetone/magpie) 的账号额度与余额接入 [Paseo](https://paseo.sh) 原生 **Usage / 额度** 入口。
 
-图标使用 [Magpie 官方图标](https://github.com/yetone/magpie/blob/main/internal/gui/assets/icons/icon-512.png)，原始许可见 [assets/MAGPIE-LICENSE](assets/MAGPIE-LICENSE)。
+图标使用 [Magpie 官方图形](https://github.com/yetone/magpie/tree/main/internal/gui/assets/icons)，原始许可见 [assets/MAGPIE-LICENSE](assets/MAGPIE-LICENSE)。
 
 Shows Magpie account quotas and balances in Paseo's native Usage. Server-only; no additional sidebar or management screen.
 
