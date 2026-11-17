@@ -1,0 +1,33 @@
+{
+  "name": "paseo-magpie",
+  "version": "0.1.0",
+  "description": "Show Magpie account quotas and balances in Paseo's native Usage.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kogekiplay/paseo-magpie.git"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "files": [
+    "paseo-plugin.json",
+    "OVERVIEW.md",
+    "OVERVIEW.*.md",
+    "index.server.ts",
+    "server/",
+    "!server/*.test.ts",
+    "assets/"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test server/*.test.ts"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.16.0",
+    "@types/node": "^22.19.0",
+    "typescript": "^5.9.3",
+    "zod": "^4.4.3"
+  }
+}

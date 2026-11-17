@@ -1,0 +1,14 @@
+{
+  "id": "paseo-magpie",
+  "name": "Magpie Usage",
+  "description": "Show Magpie account quotas and balances in native Usage.",
+  "translations": {
+    "zh-CN": {
+      "name": "Magpie 额度",
+      "description": "在原生额度入口查看 Magpie 账号额度与余额。"
+    }
+  },
+  "requirements": {
+    "paseo": ">=0.16.0"
+  }
+}
