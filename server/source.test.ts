@@ -22,11 +22,22 @@ test("global discovery and concurrent fetches share one request without exposing
     },
   });
   const accounts = await source.discover({ kind: "global" });
-  assert.equal(accounts.length, 2);
+  assert.equal(accounts.length, 3);
   assert.equal(JSON.stringify(accounts).includes("sample-secret"), false);
   assert.equal(JSON.stringify(accounts.map((a) => a.input)).includes("@"), false);
   const reports = await Promise.all(accounts.map((account) => source.fetch(account.input)));
   assert.ok(reports.every((report) => report.status === "available"));
+  const totalIndex = accounts.findIndex((account) => (account.input as { kind: string }).kind === "aggregate");
+  assert.ok(totalIndex >= 0);
+  const total = reports[totalIndex];
+  assert.equal(total.status, "available");
+  if (total.status === "available") assert.equal(total.windows[0].usedPct, 37.5);
+  for (const [index, account] of accounts.entries()) {
+    const report = reports[index];
+    if ((account.input as { kind: string }).kind === "account" && report.status === "available") {
+      assert.ok(report.windows.every((window) => window.summary === false));
+    }
+  }
   assert.equal(requests, 1);
 });
 
@@ -54,7 +65,7 @@ test("offline gateways retain an error card, recover, and do not cache failures"
   assert.equal(error.status, "error");
   assert.equal(JSON.stringify(error).includes("sample-secret"), false);
   online = true;
-  assert.equal((await source.discover({ kind: "global" })).length, 2);
+  assert.equal((await source.discover({ kind: "global" })).length, 3);
 });
 
 test("empty gateways and account removal stay unavailable instead of showing zero", async () => {

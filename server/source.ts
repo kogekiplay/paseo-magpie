@@ -9,9 +9,11 @@ import {
 import { z } from "zod";
 import { readConfig, type MagpieConfig } from "./config.ts";
 import { accountKey, accountLabel, quotaReport, responseSchema, type MagpieQuota } from "./quota.ts";
+import { aggregateReport, groupKey, quotaGroups } from "./aggregate.ts";
 
 const inputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("account"), key: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+  z.object({ kind: z.literal("aggregate"), key: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
   z.object({ kind: z.literal("gateway") }).strict(),
 ]);
 
@@ -110,11 +112,20 @@ export function createMagpieUsageSource(deps: Dependencies = {}): UsageSourceReg
             : "Magpie 暂无额度账号，请先在 Magpie 中添加账号或配置余额。",
         });
       }
+      const groups = quotaGroups(config.url, quotas);
+      if (selected.kind === "aggregate") {
+        const group = groups.find((item) => item.key === selected.key);
+        return group ? aggregateReport(group, now()) : unavailable({
+          kind: "no_quota", detail: "当前网关已没有这组多账号额度，请刷新额度列表。",
+        });
+      }
       const quota = quotas.find((item) => accountKey(config.url, item) === selected.key);
       if (!quota) {
         return unavailable({ kind: "no_quota", detail: "此账号已不在当前 Magpie 网关中，请刷新额度列表。" });
       }
-      return quotaReport(quota);
+      const group = groups.find((item) => item.key === groupKey(config.url, quota));
+      const hasAggregate = group && aggregateReport(group, now()).status === "available";
+      return quotaReport(quota, { summary: !hasAggregate });
     } catch (error) {
       return { status: "error", error: error instanceof Error ? error.message : "Magpie 额度读取失败。" };
     }
@@ -132,6 +143,14 @@ export function createMagpieUsageSource(deps: Dependencies = {}): UsageSourceReg
       try {
         const { config, quotas } = await snapshot();
         const accounts = new Map<string, UsageAccount>();
+        for (const group of quotaGroups(config.url, quotas)) {
+          accounts.set(group.key, {
+            key: group.key,
+            label: group.name,
+            harness: "Magpie",
+            input: { kind: "aggregate", key: group.key },
+          });
+        }
         for (const quota of quotas) {
           const key = accountKey(config.url, quota);
           accounts.set(key, {

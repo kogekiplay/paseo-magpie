@@ -22,6 +22,8 @@ const spanSchema = z.object({
   text: z.boolean().optional(),
   display: z.string().optional(),
   lane: z.string().optional(),
+  family: z.string().optional(),
+  heldBy: z.string().optional(),
   pool: z.string().optional(),
   amount: number,
   limit: number,
@@ -51,7 +53,7 @@ export const quotaSchema = z.object({
 
 export const responseSchema = z.object({ data: z.array(quotaSchema) });
 export type MagpieQuota = z.infer<typeof quotaSchema>;
-type Span = z.infer<typeof spanSchema>;
+export type Span = z.infer<typeof spanSchema>;
 
 export function accountKey(url: string, quota: MagpieQuota): string {
   // Names/aliases are presentation, not identity; utilization and array positions never belong here.
@@ -132,7 +134,10 @@ function unit(value: string | undefined): UsageBalance["unit"] | undefined {
   }
 }
 
-export function quotaReport(quota: MagpieQuota): UsageReport {
+export function quotaReport(
+  quota: MagpieQuota,
+  options: { summary?: boolean } = {},
+): UsageReport {
   const windows: UsageWindow[] = [];
   const balances: UsageBalance[] = [];
   const details: UsageDetail[] = [];
@@ -155,9 +160,10 @@ export function quotaReport(quota: MagpieQuota): UsageReport {
           label,
           utilizationPct: usedPct,
           resetsAt: date(span.resetsAt),
-          summary: true,
+          summary: options.summary ?? true,
           tone: toneFromUsedPct(usedPct),
         }),
+        summary: options.summary ?? true,
         runsOutAt: date(span.runsOutAt),
       });
     }
