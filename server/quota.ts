@@ -74,6 +74,33 @@ function date(value: string | null | undefined): string | null {
   return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
 }
 
+export function formatTimestamp(
+  value: string | null | undefined,
+  timeZone?: string,
+): string | null {
+  const parsed = date(value);
+  if (!parsed) return null;
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "shortOffset",
+  }).formatToParts(new Date(parsed));
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value || "";
+  const offset = part("timeZoneName").replace(/^GMT/, "UTC");
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")} (${offset})`;
+}
+
+function displayText(span: Span): string | undefined {
+  const value = span.display?.trim();
+  return value && !["unknown", "未知"].includes(value.toLowerCase()) ? value : undefined;
+}
+
 function normalizedName(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -158,18 +185,20 @@ export function quotaReport(quota: MagpieQuota): UsageReport {
       addDetail(`${id}-count`, label, `${span.amount} / ${span.limit} ${span.unit || ""}`.trim());
     }
     if (span.unlimited) addDetail(`${id}-unlimited`, label, "不限额");
-    if (span.display) addDetail(`${id}-display`, label, span.display);
+    const display = displayText(span);
+    if (display) addDetail(`${id}-display`, label, display);
   }
 
   if (quota.balance) addDetail("balance", "余额", quota.balance);
   if (quota.sharedBalance) addDetail("shared-balance", "共享余额", "与同一供应商的其他密钥共享，勿重复相加。");
-  const readAt = date(quota.readAt) || date(quota.asOf);
+  const readAt = formatTimestamp(quota.readAt) || formatTimestamp(quota.asOf);
   if (readAt) addDetail("read-at", "读取时间", readAt);
-  if (date(quota.until)) addDetail("until", "有效期", date(quota.until)!);
+  const until = formatTimestamp(quota.until);
+  if (until) addDetail("until", "有效期", until);
   if (quota.readDeferred) addDetail("deferred", "读取状态", "本次未重新读取，显示 Magpie 保留的数据。");
   if (quota.error) {
     if (!windows.length && !balances.length && !quota.balance
-      && !quota.windows.some((span) => span.display || span.unlimited || span.balance != null)) {
+      && !quota.windows.some((span) => displayText(span) || span.unlimited || span.balance != null)) {
       return { status: "error", error: quota.error };
     }
     addDetail("read-error", "读取异常", quota.error, true);

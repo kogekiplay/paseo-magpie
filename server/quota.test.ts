@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { accountKey, quotaReport, quotaSchema } from "./quota.ts";
+import { accountKey, formatTimestamp, quotaReport, quotaSchema } from "./quota.ts";
 
 const quota = (value: Record<string, unknown> = {}) => quotaSchema.parse({
   provider: "codex", name: "Codex", kind: "subscription", user: "sample@example.test", ...value,
@@ -83,8 +83,37 @@ test("keeps stale readings visible with their read time and failure", () => {
   assert.equal(report.status, "available");
   if (report.status !== "available") return;
   assert.equal(report.windows[0].usedPct, 76);
-  assert.ok(report.details?.some((item) => item.id === "read-at" && item.value === "2026-11-17T01:00:00.000Z"));
+  assert.ok(report.details?.some((item) => item.id === "read-at" && /^2026-11-17 \d{2}:\d{2} \(UTC/.test(item.value)));
   assert.ok(report.details?.some((item) => item.id === "read-error" && item.tone === "warning"));
   assert.deepEqual(quotaReport(quota({ error: "读取失败" })), { status: "error", error: "读取失败" });
   assert.equal(quotaReport(quota()).status, "unavailable");
+});
+
+test("hides unknown text-only image placeholders while retaining real quota readings", () => {
+  const placeholder = {
+    name: "Image generation", lane: "images", text: true,
+    display: "Unknown", used: 0, remaining: 100,
+  };
+  const report = quotaReport(quota({ windows: [
+    { name: "7 days", used: 81 },
+    placeholder,
+    { name: "Text quota", text: true, display: "12 / 100 requests" },
+  ] }));
+  assert.equal(report.status, "available");
+  if (report.status !== "available") return;
+  assert.equal(report.windows.length, 1);
+  assert.ok(!report.details?.some((item) => item.label.includes("images")));
+  assert.ok(report.details?.some((item) => item.value === "12 / 100 requests"));
+  assert.equal(quotaReport(quota({ windows: [placeholder] })).status, "unavailable");
+  assert.deepEqual(quotaReport(quota({ windows: [placeholder], error: "读取失败" })), {
+    status: "error", error: "读取失败",
+  });
+});
+
+test("formats timestamps with local date, 24-hour time and an explicit UTC offset", () => {
+  const time = "2026-11-17T05:14:58.333Z";
+  assert.equal(formatTimestamp(time, "Asia/Singapore"), "2026-11-17 13:14 (UTC+8)");
+  assert.equal(formatTimestamp(time, "America/New_York"), "2026-11-17 00:14 (UTC-5)");
+  assert.equal(formatTimestamp("invalid", "Asia/Singapore"), null);
+  assert.equal(formatTimestamp(null, "Asia/Singapore"), null);
 });

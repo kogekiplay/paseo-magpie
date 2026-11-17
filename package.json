@@ -1,6 +1,6 @@
 {
   "name": "paseo-magpie",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Show Magpie account quotas and balances in Paseo's native Usage.",
   "type": "module",
   "license": "MIT",
