@@ -1,12 +1,12 @@
 {
   "id": "paseo-magpie",
-  "name": "Magpie Usage",
+  "name": "Magpie",
   "icon": "assets/magpie.png",
-  "description": "Show Magpie account quotas and balances in native Usage.",
+  "description": "Show Magpie quotas and the actual model routing of the current session.",
   "translations": {
     "zh-CN": {
-      "name": "Magpie 额度",
-      "description": "在原生额度入口查看 Magpie 账号额度与余额。"
+      "name": "Magpie",
+      "description": "查看 Magpie 账号额度、余额与当前会话的实际模型路由。"
     }
   },
   "requirements": {

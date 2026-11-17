@@ -1,10 +1,10 @@
-# Magpie Usage for Paseo
+# Magpie for Paseo
 
-把 [Magpie](https://github.com/yetone/magpie) 的账号额度与余额接入 [Paseo](https://paseo.sh) 原生 **Usage / 额度** 入口。
+把 [Magpie](https://github.com/yetone/magpie) 的账号额度与余额接入 [Paseo](https://paseo.sh) 原生 **Usage / 额度** 入口，并在会话输入框附近显示实际模型路由。
 
 图标使用 [Magpie 官方图形](https://github.com/yetone/magpie/tree/main/internal/gui/assets/icons)，原始许可见 [assets/MAGPIE-LICENSE](assets/MAGPIE-LICENSE)。
 
-Shows Magpie account quotas and balances in Paseo's native Usage. Server-only; no additional sidebar or management screen.
+Shows Magpie account quotas in Paseo's native Usage and the current session's actual model routing in a composer pill. Supports Codex and Claude Code sessions routed through Magpie.
 
 ## 安装
 
@@ -27,7 +27,22 @@ Magpie 默认应运行在 **Paseo 守护进程所在主机**的 `http://127.0.0.
 
 额度来自 Magpie 网关的 `GET /v1/magpie/quotas`。刷新遵循 Magpie 自身的缓存规则，不会强制触发 Claude Code 的 `/usage` 或重置任何额度。
 
-目前提供**全局账号额度**。路由组可能跨多个账号，尚不将这些额度绑定到某个 Paseo 会话。
+额度仍为**全局账号额度**。路由组可能跨多个账号，不将这些额度绑定到某个 Paseo 会话。
+
+### 当前会话实际路由
+
+Codex 和 Claude Code 会话的输入框附近有一个 Magpie 路由按钮，显示 Magpie 最近一次实际尝试的模型。打开后可查看：
+
+- 请求模型、路由组、实际尝试的供应商/模型，以及上游响应声明的模型。
+- 请求、路由和响应各自上报的推理强度与服务层级。
+- 请求状态、HTTP 状态、首字延迟、总耗时和请求时间。
+- 多次尝试及回退记录。辅助请求单独标注，不冒充主对话请求。
+
+插件通过 Paseo 公共 SDK 获取当前 agent 的原生会话 ID，再读取 `GET /v1/magpie/route?session=...`，不根据目录、请求模型或其他会话的最新请求推断。服务端在读取前后校验会话身份，切换或重开会话时丢弃迟到结果。客户端仅在路由入口或详情挂载时订阅，关闭后取消；断线和接口错误会清除旧结果并自动重试。
+
+会话需要经 Magpie 发出请求。没有原生会话 ID 时显示等待会话，没有近期记录时显示等待请求；缺失耗时不补成零。网关只保留有限的近期路由，因此这里展示的是**当前会话最近一次可查请求**，不保证是正在运行的主对话轮次，也不提供历史统计。Magpie 的路由接口不返回实际账号身份。
+
+网关需要支持 `/v1/magpie/route`。旧版本返回 404 时会提示升级。额度和路由使用同一份网关配置；远程受限密钥只能读取 Magpie 允许它查看的请求。原生会话 ID 只发送给配置的 Magpie 网关，不写入插件日志或持久化到插件文件；原始上游错误文字不发给客户端。
 
 ### 多账号汇总
 
@@ -69,7 +84,7 @@ Magpie 默认应运行在 **Paseo 守护进程所在主机**的 `http://127.0.0.
 | `PASEO_MAGPIE_URL` | 覆盖网关地址 |
 | `PASEO_MAGPIE_API_KEY` | 覆盖网关密钥 |
 
-配置文件每次读取额度时重新读取。修改后在 Usage 中刷新即可；新增或移除账号时刷新额度列表。配置文件和密钥无需放进源码目录。
+配置文件每次读取额度或路由时重新读取。修改后在 Usage 中刷新即可，路由会自动重新读取；新增或移除账号时刷新额度列表。配置文件和密钥无需放进源码目录。
 
 ## 开发
 
@@ -82,7 +97,7 @@ npm test
 paseo plugin install .
 ```
 
-使用 Paseo 提供的 `@getpaseo/plugin/server/usage` 注册原生额度来源。运行时依赖由 Paseo 提供，无需构建步骤。源码更新后执行 `paseo plugin reload paseo-magpie`。
+使用 Paseo 提供的 `@getpaseo/plugin/server/usage` 注册原生额度来源，使用 composer pill 和可取消的插件订阅显示会话路由。界面采用 React Native 组件和 Paseo 主题色。运行时依赖由 Paseo 提供，无需构建步骤。源码更新后执行 `paseo plugin reload paseo-magpie`。
 
 测试使用合成账号与额度数据，不需要真实账号或密钥。源码和文档不包含本机账号数据。
 

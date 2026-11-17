@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { URL } from "node:url";
 import { z } from "zod";
 
 const configSchema = z.object({
