@@ -1,4 +1,10 @@
-# Magpie for Paseo
+<p align="center">
+  <img src="assets/magpie.svg" alt="Magpie logo" width="96">
+</p>
+
+<h1 align="center">Magpie for Paseo</h1>
+
+<p align="center">把 Magpie 的额度、余额和实际模型路由带到 Paseo。</p>
 
 把 [Magpie](https://github.com/yetone/magpie) 的账号额度与余额接入 [Paseo](https://paseo.sh) 原生 **Usage / 额度** 入口，并在会话输入框附近显示实际模型路由。
 
