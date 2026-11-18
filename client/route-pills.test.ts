@@ -54,7 +54,7 @@ test("hidden idle pills wake for a new running request and only the provider ope
   assert.ok(x.buttons.every((entry) => entry.button.visible));
   assert.deepEqual(x.buttons.map((entry) => entry.button.label), ["vendor", "120 B", "actual"]);
   assert.deepEqual(x.buttons.map((entry) => entry.button.title), [
-    "查看当前会话的 Magpie 实际路由",
+    "查看本次请求的 Magpie 实际路由",
     "当前会话的 Magpie 接收大小",
     "当前会话的 Magpie 实际模型",
   ]);

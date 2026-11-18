@@ -87,7 +87,9 @@ export function createRouteSurfaces(store: RouteStore) {
           <Text style={{ flex: 1, color: theme.colors.foreground, fontSize: 16, fontWeight: "600" }}>Magpie 路由</Text>
           <Text style={{ color: tone, fontSize: 12 }}>{stateTitle(state, now)}</Text>
         </View>
-        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, lineHeight: 18 }}>{state.message}</Text>
+        {!route ? (
+          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, lineHeight: 18 }}>{state.message}</Text>
+        ) : null}
         {route ? (
           <>
             {route.kind ? (
