@@ -83,14 +83,14 @@ export function contributeRoutes(
     });
     const { RouteIcon, RouteContent } = createRouteSurfaces(store);
     for (const part of [
-      { id: "route", label: "实际路由", icon: RouteIcon, interactive: true },
-      { id: "route-traffic", label: "接收大小", icon: "Download", interactive: false },
-      { id: "route-model", label: "模型", icon: "Cpu", interactive: false },
+      { id: "route", label: "实际路由", title: "查看当前会话的 Magpie 实际路由", icon: RouteIcon, interactive: true },
+      { id: "route-traffic", label: "接收大小", title: "当前会话的 Magpie 接收大小", icon: "Download", interactive: false },
+      { id: "route-model", label: "模型", title: "当前会话的 Magpie 实际模型", icon: "Cpu", interactive: false },
     ]) {
       pills.push(client.addComposerPill({
         id: part.id, workspaceId: agent.workspaceId, agentId: agent.id,
         button: {
-          title: "查看实际路由详情",
+          title: part.title,
           label: part.label, icon: part.icon, visible: false,
           disabled: !part.interactive,
           behavior: part.interactive

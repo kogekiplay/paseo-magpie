@@ -53,6 +53,11 @@ test("hidden idle pills wake for a new running request and only the provider ope
   x.emit(active);
   assert.ok(x.buttons.every((entry) => entry.button.visible));
   assert.deepEqual(x.buttons.map((entry) => entry.button.label), ["vendor", "120 B", "actual"]);
+  assert.deepEqual(x.buttons.map((entry) => entry.button.title), [
+    "查看当前会话的 Magpie 实际路由",
+    "当前会话的 Magpie 接收大小",
+    "当前会话的 Magpie 实际模型",
+  ]);
   assert.equal(x.buttons[0].button.behavior.kind, "popover");
   assert.ok(!x.buttons[0].button.disabled);
   assert.ok(x.buttons.slice(1).every((entry) => entry.button.disabled && entry.button.behavior.kind === "action"));
