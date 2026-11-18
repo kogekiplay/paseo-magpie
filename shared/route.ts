@@ -72,6 +72,46 @@ export function routeFailed(route: SessionRoute): boolean {
   return Boolean(route.error) || (route.done && (route.status ?? 0) >= 400);
 }
 
+const auxiliaryKindNames: Record<string, string> = {
+  guardian: "审批检查",
+  auto_review: "自动审查",
+  guardian_review: "审批检查",
+  review: "审查",
+  compact: "上下文压缩",
+  memory_consolidation: "记忆整理",
+  memgen: "记忆整理",
+  memory: "记忆整理",
+  thread_title: "生成标题",
+  thread_title_reconsideration: "重新生成标题",
+  title_generation: "生成标题",
+  title: "生成标题",
+  thread_description: "生成描述",
+  composer_predictions: "输入预测",
+  collab_spawn: "子任务协作",
+  thread_spawn: "子任务协作",
+  agent_job: "子任务协作",
+  luna_reserve: "Luna 预留",
+  ambient_suggestions: "智能建议",
+  ambient_suggestion_safety: "智能建议安全检查",
+  web_search: "网页搜索",
+  vision: "图像理解",
+  routing: "路由分类",
+  connection_check: "连接检查",
+  provider_test: "供应商测试",
+  api_detect: "检测 API",
+  model_list: "模型列表",
+  mcp_tool: "MCP 工具",
+  keepalive: "连接保活",
+  agent_summary: "进度摘要",
+  agent_summary_inferred: "进度摘要（推断）",
+  auto_mode_check: "自动模式检查",
+  auto_mode_check_inferred: "自动模式检查（推断）",
+};
+
+export function auxiliaryKindLabel(kind: string): string {
+  return auxiliaryKindNames[kind] ?? kind;
+}
+
 /** Native composer pills have a host-owned 160px cap. Keep their independent values separate
  * so response size cannot be ellipsized behind a long provider/model path. */
 export function routePillLabels(state: RouteState): { provider: string; model?: string; traffic?: string } {

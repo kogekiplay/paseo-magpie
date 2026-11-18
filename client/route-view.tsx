@@ -3,7 +3,7 @@ import { ActivityIndicator, Text, View } from "react-native";
 import { Icon } from "@getpaseo/plugin/client/ui";
 import type { PluginButtonContentProps, PluginButtonIconProps } from "@getpaseo/plugin/client";
 import type { PluginTheme } from "@getpaseo/plugin";
-import { byteLabel, durationLabel, routeFailed, type RouteState } from "../shared/route.ts";
+import { auxiliaryKindLabel, byteLabel, durationLabel, routeFailed, type RouteState } from "../shared/route.ts";
 import { magpieIcon } from "../shared/icon.ts";
 import type { RouteStore } from "./route-store.ts";
 
@@ -76,7 +76,7 @@ export function createRouteSurfaces(store: RouteStore) {
           <>
             {route.kind ? (
               <Text style={{ color: theme.colors.statusWarning, fontSize: 13, lineHeight: 19 }}>
-                辅助请求 · {route.kind}。这条记录不代表主对话请求。
+                辅助请求 · {auxiliaryKindLabel(route.kind)}。这条记录不代表主对话请求。
               </Text>
             ) : null}
             <View style={{ gap: 6 }}>

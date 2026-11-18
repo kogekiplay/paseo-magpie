@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createRouteStore } from "./route-store.ts";
 import {
+  auxiliaryKindLabel,
   byteLabel, durationLabel, routePillLabels, connectingRoute, type RouteState,
 } from "../shared/route.ts";
 
@@ -101,6 +102,13 @@ test("labels distinguish actual, pending, failed and auxiliary routes", () => {
   assert.equal(durationLabel(0), "0 ms");
   assert.equal(durationLabel(700), "700 ms");
   assert.equal(durationLabel(1234), "1.23 s");
+});
+
+test("translates known auxiliary request kinds and preserves unknown kinds", () => {
+  assert.equal(auxiliaryKindLabel("compact"), "上下文压缩");
+  assert.equal(auxiliaryKindLabel("collab_spawn"), "子任务协作");
+  assert.equal(auxiliaryKindLabel("title"), "生成标题");
+  assert.equal(auxiliaryKindLabel("future_kind"), "future_kind");
 });
 
 test("byte labels update across B/KB/MB without dropping the provider or inventing missing counts", () => {
