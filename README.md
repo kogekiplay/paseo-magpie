@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/magpie.png" alt="Magpie logo" width="96">
+  <img src="assets/icon.png" alt="Paseo Magpie plugin icon" width="96">
 </p>
 
 <h1 align="center">Magpie for Paseo</h1>
