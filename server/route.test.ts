@@ -39,6 +39,7 @@ for (const provider of ["codex", "claude"]) {
     });
     const result = await read(input, signal());
     assert.equal(result.state.state, "ready");
+    assert.equal(result.state.message, "当前会话最近一次请求");
     assert.equal(result.state.route?.model, "test-vendor/actual-model");
     assert.equal(result.seq, 11);
     assert.equal(resolutions, 2);
@@ -46,6 +47,17 @@ for (const provider of ["codex", "claude"]) {
     assert.equal(JSON.stringify(result.state).includes("native-session-A"), false);
   });
 }
+
+test("an active route is described as the current request", async () => {
+  const activeRoute = { ...route, done: false, tries: [{ ...route.tries[0], done: false }] };
+  const read = createRouteReader({
+    resolve: async () => agent, config: async () => config,
+    request: async () => response(activeRoute),
+  });
+  const result = await read(input, signal());
+  assert.equal(result.state.message, "本次请求");
+  assert.equal(result.state.route?.done, false);
+});
 
 test("missing, archived, unsupported and foreign-workspace agents never query Magpie", async () => {
   for (const [value, expected] of [

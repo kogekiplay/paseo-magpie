@@ -75,6 +75,10 @@ function safeRoute(route: SessionRoute, key?: string): SessionRoute {
   };
 }
 
+function routeMessage(route: SessionRoute): string {
+  return route.done ? "当前会话最近一次请求" : "本次请求";
+}
+
 export function createRouteReader(deps: Dependencies) {
   const loadConfig = deps.config ?? readConfig;
   const request = deps.request ?? fetch;
@@ -137,7 +141,7 @@ export function createRouteReader(deps: Dependencies) {
         session,
         seq: parsed.data.seq,
         state: route ? {
-          state: "ready", message: "当前会话最近一次请求", route: safeRoute(route, config.apiKey),
+          state: "ready", message: routeMessage(route), route: safeRoute(route, config.apiKey),
         } : {
           state: "waiting_route", route: null,
           message: "暂无当前会话的近期路由。确认会话经 Magpie 发出请求后等待更新；较早记录可能已被网关清理。",
