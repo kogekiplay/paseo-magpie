@@ -3,7 +3,9 @@ import { ActivityIndicator, Text, View } from "react-native";
 import { Icon } from "@getpaseo/plugin/client/ui";
 import type { PluginButtonContentProps, PluginButtonIconProps } from "@getpaseo/plugin/client";
 import type { PluginTheme } from "@getpaseo/plugin";
-import { auxiliaryKindLabel, byteLabel, durationLabel, routeFailed, type RouteState } from "../shared/route.ts";
+import {
+  activeRouteStatus, auxiliaryKindLabel, byteLabel, durationLabel, routeFailed, type RouteState,
+} from "../shared/route.ts";
 import { magpieIcon } from "../shared/icon.ts";
 import type { RouteStore } from "./route-store.ts";
 
@@ -17,8 +19,13 @@ function Field({ label, value, theme }: { label: string; value?: string; theme: 
   );
 }
 
-function stateTitle(state: RouteState): string {
-  if (state.route) return routeFailed(state.route) ? "请求失败" : state.route.done ? "已完成" : "请求中";
+function stateTitle(state: RouteState, now: number): string {
+  if (state.route) {
+    if (routeFailed(state.route)) return "请求失败";
+    if (state.route.done) return "已完成";
+    const activity = activeRouteStatus(state.route, now);
+    return activity === "stalled" ? "可能卡住" : activity === "waiting" ? "等待响应" : "请求中";
+  }
   if (state.state === "error") return "暂时离线";
   if (state.state === "waiting_session") return "等待会话";
   if (state.state === "waiting_route") return "等待请求";
@@ -39,15 +46,21 @@ const RequestIcon = memo(function RequestIcon({ active, size, color }: {
   );
 });
 
-function ContentAge({ at, active, theme }: { at?: number; active: boolean; theme: PluginTheme }) {
+function useClock(active: boolean): number {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
-    if (!at || !active) return;
     setNow(Date.now());
+    if (!active) return;
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(timer);
-  }, [at, active]);
-  if (!at || !active) return null;
+  }, [active]);
+  return now;
+}
+
+function ContentAge({ at, active, now, theme }: {
+  at?: number; active: boolean; now: number; theme: PluginTheme;
+}) {
+  if (at === undefined || !active) return null;
   return <Field label="距最近内容" value={`${Math.max(0, Math.floor((now - at) / 1_000))} 秒`} theme={theme} />;
 }
 
@@ -61,15 +74,18 @@ export function createRouteSurfaces(store: RouteStore) {
   function RouteContent({ theme, layout }: PluginButtonContentProps) {
     const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
     const route = state.route;
+    const active = Boolean(route && !route.done && !routeFailed(route));
+    const now = useClock(active && route?.contentAt !== undefined);
+    const activity = active && route ? activeRouteStatus(route, now) : undefined;
     const tone = state.state === "error" || (route && routeFailed(route))
-      ? theme.colors.statusDanger : route && !route.done
-        ? theme.colors.accent : theme.colors.foregroundMuted;
+      ? theme.colors.statusDanger : activity === "waiting" || activity === "stalled"
+        ? theme.colors.statusWarning : active ? theme.colors.accent : theme.colors.foregroundMuted;
     return (
       <View style={{ gap: 16, width: layout.compact ? "100%" : 380, maxWidth: "100%" }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Icon icon={magpieIcon} size={22} />
           <Text style={{ flex: 1, color: theme.colors.foreground, fontSize: 16, fontWeight: "600" }}>Magpie 路由</Text>
-          <Text style={{ color: tone, fontSize: 12 }}>{stateTitle(state)}</Text>
+          <Text style={{ color: tone, fontSize: 12 }}>{stateTitle(state, now)}</Text>
         </View>
         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, lineHeight: 18 }}>{state.message}</Text>
         {route ? (
@@ -88,7 +104,7 @@ export function createRouteSurfaces(store: RouteStore) {
             <View style={{ gap: 12 }}>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 28 }}>
                 <Field label="已接收" value={byteLabel(route.bytes)} theme={theme} />
-                <ContentAge at={route.contentAt} active={!route.done} theme={theme} />
+                <ContentAge at={route.contentAt} active={active} now={now} theme={theme} />
               </View>
               <Field label="请求模型" value={route.asked} theme={theme} />
               <Field label="路由组" value={route.group} theme={theme} />

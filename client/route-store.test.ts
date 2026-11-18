@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createRouteStore } from "./route-store.ts";
 import {
-  auxiliaryKindLabel,
-  byteLabel, durationLabel, routePillLabels, connectingRoute, type RouteState,
+  activeRouteStatus, auxiliaryKindLabel, byteLabel, durationLabel, routePillLabels,
+  connectingRoute, type RouteState,
 } from "../shared/route.ts";
 
 const live: RouteState = {
@@ -109,6 +109,14 @@ test("translates known auxiliary request kinds and preserves unknown kinds", () 
   assert.equal(auxiliaryKindLabel("collab_spawn"), "子任务协作");
   assert.equal(auxiliaryKindLabel("title"), "生成标题");
   assert.equal(auxiliaryKindLabel("future_kind"), "future_kind");
+});
+
+test("marks a quiet active route as waiting and then stalled", () => {
+  const route = { ...live.route!, contentAt: 1_000 };
+  assert.equal(activeRouteStatus(route, 5_999), "requesting");
+  assert.equal(activeRouteStatus(route, 6_000), "waiting");
+  assert.equal(activeRouteStatus(route, 21_000), "stalled");
+  assert.equal(activeRouteStatus({ ...route, contentAt: undefined }, 100_000), "requesting");
 });
 
 test("byte labels update across B/KB/MB without dropping the provider or inventing missing counts", () => {

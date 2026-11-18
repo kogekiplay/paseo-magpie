@@ -72,6 +72,19 @@ export function routeFailed(route: SessionRoute): boolean {
   return Boolean(route.error) || (route.done && (route.status ?? 0) >= 400);
 }
 
+export const ROUTE_WAITING_AFTER_MS = 5_000;
+export const ROUTE_STALLED_AFTER_MS = 20_000;
+
+export type ActiveRouteStatus = "requesting" | "waiting" | "stalled";
+
+export function activeRouteStatus(route: SessionRoute, now: number): ActiveRouteStatus {
+  if (route.contentAt === undefined) return "requesting";
+  const quietFor = Math.max(0, now - route.contentAt);
+  if (quietFor >= ROUTE_STALLED_AFTER_MS) return "stalled";
+  if (quietFor >= ROUTE_WAITING_AFTER_MS) return "waiting";
+  return "requesting";
+}
+
 const auxiliaryKindNames: Record<string, string> = {
   guardian: "审批检查",
   auto_review: "自动审查",
