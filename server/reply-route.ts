@@ -118,7 +118,19 @@ export async function recordReplyRoute(
         if (wait) await delay(wait, undefined, { signal: controller.signal });
         if (agent.provider === "codex") {
           route = await readCodexReplyRoute(session, messageId, controller.signal);
-          if (route) break;
+          if (route) {
+            // Magpie runs completion hooks asynchronously; an earlier request can be indexed after the final one.
+            if (route.requests) {
+              try {
+                await delay(650, undefined, { signal: controller.signal });
+                const refreshed = await readCodexReplyRoute(session, messageId, controller.signal);
+                if (!controller.signal.aborted) route = refreshed;
+              } catch {
+                // Keep the anchored result when the optional refresh times out.
+              }
+            }
+            break;
+          }
           continue;
         }
         const response = await fetchTrace(config, controller.signal, fetch);
@@ -130,7 +142,7 @@ export async function recordReplyRoute(
       clearTimeout(timer);
       signal.removeEventListener("abort", abort);
     }
-    if (!route || controller.signal.aborted) return;
+    if (!route || signal.aborted) return;
     if (await latestReplyId() !== messageId || ref.runtimeInfo?.sessionId !== session || signal.aborted) return;
 
     const id = createHash("sha256").update(turnId).update("\0").update(messageId).digest("hex");

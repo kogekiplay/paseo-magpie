@@ -55,7 +55,9 @@ Codex 和 Claude Code 会话的输入框附近按顺序显示 Magpie 最近一�
 
 ### 回复的实际路由
 
-使用本机 Magpie 网关时，精确匹配的新回复下方会显示「供应商 · 模型」，点开可查看这次请求的尝试顺序和 HTTP 状态。Claude Code 直接用网关提供的响应 ID。Codex 需要在同机、同一用户下运行 Magpie 和 Paseo 守护进程，并在 Magpie 上安装 Magpie Paseo Bridge。在 Paseo 的「设置 → 插件 → Magpie」中可打开 [Magpie Paseo Bridge 安装指南](https://github.com/kogekiplay/magpie-paseo-bridge/blob/main/README.zh-CN.md#安装)。配套插件当前支持 macOS 和 Linux。没有精确关联的路由时，回复下方不显示记录。原生 ChatGPT 转发路径可能缺少关联所需的字段。
+使用本机 Magpie 网关时，精确匹配的新回复下方会显示实际供应商和模型，点开可查看这次请求的尝试顺序和 HTTP 状态。Claude Code 使用网关提供的响应 ID。
+
+Codex 需要在同机、同一用户下运行 Magpie 和 Paseo 守护进程，并安装 Magpie Paseo Bridge `v0.1.2` 或更新版本。工具调用让一轮包含多次模型请求时，轮次结束后可在最终回复下展开「本轮已记录 N 次请求」。每次请求单独显示实际供应商、模型和回退尝试。较早版本的 Bridge 只记录最终回复路由。Paseo 的「设置 → 插件 → Magpie」中可打开 [Magpie Paseo Bridge 安装指南](https://github.com/kogekiplay/magpie-paseo-bridge/blob/main/README.zh-CN.md#安装)。配套插件当前支持 macOS 和 Linux。记录依赖精确的标识和网关 trace，原生 ChatGPT 转发可能缺少所需字段。
 
 ### 多账号汇总
 

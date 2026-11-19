@@ -36,3 +36,34 @@ test("reads only the matching, private, current v1 bridge record", { skip: proce
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("orders exact native-turn requests before the reply and ignores other or unsafe records", { skip: process.platform === "win32" }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "paseo-magpie-history-test-"));
+  try {
+    const index = join(root, "magpie", "paseo-bridge", "v1");
+    await mkdir(index, { recursive: true, mode: 0o700 });
+    const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+    const turn = hash("session\0exact-turn");
+    const request = hash("final-response");
+    const summary = (provider: string) => ({ provider, model: "sol", attempts: [{ route: `${provider}/sol`, status: 200, failed: false }] });
+    const order = (id: number) => ({ id, time: 1000 });
+    const write = (key: string, value: unknown, mode = 0o600) => writeFile(join(index, `${key}.json`), JSON.stringify(value), { mode });
+    const record = (provider: string, id: number, phase = "tool") => ({ version: 1, ...summary(provider), order: order(id), phase });
+    await Promise.all([
+      write(hash("session\0msg_final"), { version: 1, ...summary("last"), history: { turn, request, order: order(4) } }),
+      write(`${turn}-${hash("second")}`, record("second", 2)),
+      write(`${turn}-${hash("first")}`, record("first", 1)),
+      write(`${turn}-${request}`, record("last", 4, "reply")),
+      write(`${turn}-${hash("later")}`, record("later", 5)),
+      write(`${hash("session\0different-turn")}-${hash("other")}`, record("other-turn", 1)),
+      write(`${turn}-${hash("public")}`, record("public", 3), 0o644),
+    ]);
+    assert.deepEqual(await readCodexReplyRoute("session", "msg_final", new AbortController().signal, root), {
+      ...summary("last"), requests: [
+        { ...summary("first"), phase: "tool" }, { ...summary("second"), phase: "tool" }, { ...summary("last"), phase: "reply" },
+      ],
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
