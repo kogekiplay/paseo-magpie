@@ -4,7 +4,7 @@ import { chmod, mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { readCodexReplyRoute } from "./codex-reply-route.ts";
+import { readCodexReplyRoute, readCodexTurnRoutes } from "./codex-reply-route.ts";
 
 test("reads only the matching, private, current v1 bridge record", { skip: process.platform === "win32" }, async () => {
   const root = await mkdtemp(join(tmpdir(), "paseo-magpie-bridge-test-"));
@@ -61,6 +61,12 @@ test("orders exact native-turn requests before the reply and ignores other or un
     assert.deepEqual(await readCodexReplyRoute("session", "msg_final", new AbortController().signal, root), {
       ...summary("last"), requests: [
         { ...summary("first"), phase: "tool" }, { ...summary("second"), phase: "tool" }, { ...summary("last"), phase: "reply" },
+      ],
+    });
+    assert.deepEqual(await readCodexTurnRoutes("session", "exact-turn", new AbortController().signal, root), {
+      ...summary("later"), turnOnly: true, requests: [
+        { ...summary("first"), phase: "tool" }, { ...summary("second"), phase: "tool" },
+        { ...summary("last"), phase: "model" }, { ...summary("later"), phase: "tool" },
       ],
     });
   } finally {

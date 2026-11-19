@@ -59,6 +59,8 @@ Codex 和 Claude Code 会话的输入框附近按顺序显示 Magpie 最近一�
 
 Codex 需要在同机、同一用户下运行 Magpie 和 Paseo 守护进程，并安装 Magpie Paseo Bridge `v0.1.2` 或更新版本。工具调用让一轮包含多次模型请求时，轮次结束后可在最终回复下展开「本轮已记录 N 次请求」。每次请求单独显示实际供应商、模型和回退尝试。较早版本的 Bridge 只记录最终回复路由。Paseo 的「设置 → 插件 → Magpie」中可打开 [Magpie Paseo Bridge 安装指南](https://github.com/kogekiplay/magpie-paseo-bridge/blob/main/README.zh-CN.md#安装)。配套插件当前支持 macOS 和 Linux。记录依赖精确的标识和网关 trace，原生 ChatGPT 转发可能缺少所需字段。
 
+如果 Bridge 已记录本轮请求，但没有给最终回复建立索引，插件会在对应 Codex 本地会话日志的有限范围内，用最终消息 ID 定位已完成的原生轮次。只使用关联所需的字段，不会把日志正文或原始 ID 发送给界面。此时列表仍显示该轮的实际路由，没有确切证据的请求不标为「最终回复」。
+
 ### 多账号汇总
 
 汇总使用网关的公开额度读数，按供应商、账号类型和来源分别分组：

@@ -4,7 +4,8 @@ import type { PluginHookContext, PluginHookPayload } from "@getpaseo/plugin/serv
 import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
 import { z } from "zod";
 import { replyRouteKind, type ReplyRoute } from "../shared/reply-route.ts";
-import { readCodexReplyRoute } from "./codex-reply-route.ts";
+import { readCodexReplyRoute, readCodexTurnRoutes } from "./codex-reply-route.ts";
+import { findCodexTurn } from "./codex-turn.ts";
 import { readConfig } from "./config.ts";
 import { redact } from "./source.ts";
 import { fetchTrace, isLoopbackGateway, traceSchema } from "./traffic.ts";
@@ -137,6 +138,10 @@ export async function recordReplyRoute(
         if (!response.ok) return;
         route = matchReplyRoute(await response.json(), session, messageId, config.apiKey);
         if (route) break;
+      }
+      if (!route && agent.provider === "codex" && !controller.signal.aborted) {
+        const nativeTurn = await findCodexTurn(session, messageId, controller.signal);
+        if (nativeTurn) route = await readCodexTurnRoutes(session, nativeTurn, controller.signal) ?? null;
       }
     } finally {
       clearTimeout(timer);

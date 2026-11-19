@@ -15,6 +15,7 @@ export const requestPhaseSchema = z.enum(["tool", "model", "reply"]);
 export const replyRouteSchema = requestRouteSchema.extend({
   requests: z.array(requestRouteSchema.extend({ phase: requestPhaseSchema })).min(1).optional(),
   truncated: z.boolean().optional(),
+  turnOnly: z.boolean().optional(),
 });
 
 export type RequestRoute = z.infer<typeof requestRouteSchema>;

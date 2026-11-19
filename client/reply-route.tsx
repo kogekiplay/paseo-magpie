@@ -65,7 +65,7 @@ function ReplyRouteRow({ item: { data }, theme }: PluginTimelineItemProps<ReplyR
   const [expanded, setExpanded] = useState(false);
   const { t } = useTranslation(messages);
   const muted = theme.colors.foregroundMuted;
-  const history = data.requests && (data.requests.length > 1 || data.truncated) ? data.requests : undefined;
+  const history = data.requests && (data.requests.length > 1 || data.truncated || data.turnOnly) ? data.requests : undefined;
   const label = history ? t("history", { total: history.length }) : `${t("finalRoute")} · ${data.provider} · ${data.model}`;
   return (
     <View style={{ alignSelf: "flex-start", maxWidth: "100%", gap: 5 }}>
