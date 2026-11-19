@@ -53,6 +53,10 @@ Codex 和 Claude Code 会话的输入框附近按顺序显示 Magpie 最近一�
 
 网关需要支持 `/v1/magpie/route`。旧版本返回 404 时会提示升级。额度和路由使用同一份网关配置；远程受限密钥只能读取 Magpie 允许它查看的请求。原生会话 ID 只发送给配置的 Magpie 网关，不写入插件日志或持久化到插件文件；原始上游错误文字不发给客户端。
 
+### 回复的实际路由
+
+使用本机 Magpie 网关时，精确匹配的新回复下方会显示「供应商 · 模型」，点开可查看这次请求的尝试顺序和 HTTP 状态。Claude Code 直接用网关提供的响应 ID。Codex 需要在同机、同一用户下运行 Magpie 和 Paseo 守护进程，并在 Magpie 上安装 Magpie Paseo Bridge。在 Paseo 的「设置 → 插件 → Magpie」中可打开 [Magpie Paseo Bridge 安装指南](https://github.com/kogekiplay/magpie-paseo-bridge/blob/main/README.zh-CN.md#安装)。配套插件当前支持 macOS 和 Linux。没有精确关联的路由时，回复下方不显示记录。原生 ChatGPT 转发路径可能缺少关联所需的字段。
+
 ### 多账号汇总
 
 汇总使用网关的公开额度读数，按供应商、账号类型和来源分别分组：

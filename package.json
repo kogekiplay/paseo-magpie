@@ -1,6 +1,6 @@
 {
   "name": "paseo-magpie",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Show Magpie quotas and the actual model routing of the current Paseo session.",
   "type": "module",
   "license": "MIT",

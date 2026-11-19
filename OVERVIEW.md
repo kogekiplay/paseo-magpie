@@ -10,6 +10,8 @@ Response sizes update with a brief spring-like numeric transition in B, KB or MB
 
 Routing requires a Magpie version with the session route endpoint. It reports the session's latest retained request, which may predate the current turn. Older requests can disappear from the gateway's limited trace. The endpoint does not identify the account used, and sessions without a retained request show a waiting state.
 
+New replies can show a provider and model below the reply when Paseo can match it to the local Magpie gateway by ID. Expand the row to see the routing attempts and HTTP statuses. Claude Code uses the gateway's response ID. Codex needs a Magpie companion plugin on the same computer to provide the output message ID. See the installation guide in this plugin's settings.
+
 Read times remain visible, including when Magpie returns an older reading with an error. Refresh follows Magpie's own provider cache. The plugin reads information and does not modify gateway configuration or account credentials. Configuration and credentials stay on the daemon machine. Native session IDs are not logged or persisted by this plugin, and raw upstream error messages are withheld from the client.
 
 Failed readings and expired fallback windows are excluded from totals. Reset times on totals indicate the earliest contributing account's renewal. Pins from older versions remain selected until you change them in Usage.

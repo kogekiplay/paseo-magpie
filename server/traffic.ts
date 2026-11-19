@@ -22,11 +22,18 @@ const traceRouteSchema = z.object({
   order: z.array(seatSchema),
   left: z.array(seatSchema).optional(),
 });
-const traceSchema = z.object({ object: z.literal("trace"), routes: z.array(z.unknown()) });
+export const traceSchema = z.object({ object: z.literal("trace"), routes: z.array(z.unknown()) });
 
 export function isLoopbackGateway(value: string): boolean {
   const host = new URL(value).hostname.replace(/^\[|\]$/g, "").toLowerCase();
   return host === "localhost" || host === "::1" || (isIP(host) === 4 && host.startsWith("127."));
+}
+
+export function fetchTrace(config: MagpieConfig, signal: AbortSignal, request: typeof fetch) {
+  return request(new URL("v1/magpie/trace", config.url), {
+    headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
+    redirect: "error", signal,
+  });
 }
 
 /** Trace is local-only and contains unrelated accounts. Whitelist just the counters of the
@@ -74,10 +81,7 @@ export function createTrafficReader(request: typeof fetch = fetch) {
     signal.addEventListener("abort", abort, { once: true });
     const timer = setTimeout(abort, Math.min(2_000, config.timeoutMs));
     try {
-      const response = await request(new URL("v1/magpie/trace", config.url), {
-        headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
-        redirect: "error", signal: controller.signal,
-      });
+      const response = await fetchTrace(config, controller.signal, request);
       if (!response.ok) {
         refused = { url: config.url, key: config.apiKey, until: Date.now() + 30_000 };
         return route;
