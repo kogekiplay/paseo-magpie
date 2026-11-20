@@ -54,28 +54,33 @@ const numeric: TextStyle = { fontVariant: ["tabular-nums"] };
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 const clockFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 
-function Control({ label, onPress, theme, selected, disabled, icon, compact }: {
+function Control({ label, onPress, theme, selected, disabled, icon, compact, segment }: {
   label: string; onPress: () => void; theme: Theme; selected?: boolean; disabled?: boolean;
   icon?: "RefreshCw" | "ChevronLeft" | "ChevronRight"; compact?: boolean;
+  segment?: "agent" | "period";
 }) {
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const primary = selected && segment === "agent";
   return (
     <Pressable
       accessibilityRole="button" accessibilityLabel={label}
       accessibilityState={{ selected, disabled }} disabled={disabled} onPress={onPress}
       onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-      hitSlop={4}
+      onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)}
+      hitSlop={segment ? { top: 4, bottom: 4, left: 0, right: 0 } : 4}
       style={({ pressed }) => ({
-        minHeight: compact ? 40 : 34, minWidth: compact ? 40 : 34, alignItems: "center", justifyContent: "center",
-        paddingHorizontal: icon ? 0 : compact ? 10 : 12, borderRadius: 6, borderWidth: 1,
-        borderColor: focused ? colors.accent : selected ? colors.border : colors.surface1,
-        backgroundColor: selected ? colors.surface0 : pressed ? colors.surface2 : colors.surface1,
-        opacity: disabled ? 0.48 : 1,
+        flex: segment && compact ? 1 : undefined,
+        minHeight: compact ? 40 : 36, minWidth: compact ? 40 : 36, alignItems: "center", justifyContent: "center",
+        paddingHorizontal: icon ? 0 : compact ? 6 : 12, borderRadius: 7, borderWidth: 1,
+        borderColor: focused ? colors.accent : primary ? colors.foreground : selected || !segment ? colors.border : colors.surface1,
+        backgroundColor: primary ? colors.foreground : selected ? colors.surface0 : pressed || (hovered && !disabled) ? colors.surface2 : colors.surface1,
+        opacity: disabled ? 0.48 : pressed ? 0.8 : 1,
       })}
     >
       {icon ? <Icon icon={icon} color={colors.foreground} size={16} />
-        : <Text style={{ color: selected ? colors.foreground : colors.foregroundMuted, fontSize: 13, fontWeight: selected ? "600" : "500" }}>{label}</Text>}
+        : <Text style={{ color: primary ? colors.surface0 : selected ? colors.foreground : colors.foregroundMuted, fontSize: 13, fontWeight: selected ? "600" : "500" }}>{label}</Text>}
     </Pressable>
   );
 }
@@ -178,27 +183,40 @@ function HistoryList({ theme, layout }: PluginScreenProps) {
   const colors = theme.colors;
   const compact = layout.compact || paneWidth < 760;
   const padding = compact ? 14 : 24;
-  const filterGroup = { flexDirection: "row" as const, alignItems: "center" as const, padding: 3, gap: 1, backgroundColor: colors.surface1, borderRadius: 9 };
+  const filterGroup = {
+    flexDirection: "row" as const, alignItems: "center" as const, padding: 3, gap: 3,
+    backgroundColor: colors.surface1, borderRadius: 11, borderWidth: 1, borderColor: colors.border,
+  };
+  const agents = (
+    <View style={[filterGroup, compact && { flex: 1 }]}>
+      {historyAgents.map((value) => (
+        <Control key={value} label={agentLabels[value]} theme={theme} selected={agent === value} compact={compact} segment="agent"
+          onPress={() => { setAgent(value); setOffset(0); }} />
+      ))}
+    </View>
+  );
+  const periods = (
+    <View style={filterGroup}>
+      {historyPeriods.map((value) => (
+        <Control key={value} label={t(value)} theme={theme} selected={period === value} compact={compact} segment="period"
+          onPress={() => { setPeriod(value); setOffset(0); }} />
+      ))}
+    </View>
+  );
+  const reload = <Control label={t("reload")} theme={theme} icon="RefreshCw" onPress={refresh} compact={compact} />;
   return (
     <View onLayout={({ nativeEvent }) => setPaneWidth(nativeEvent.layout.width)}
       style={{ flex: 1, width: "100%", maxWidth: 1256, alignSelf: "center", backgroundColor: colors.surface0, paddingHorizontal: padding }}>
-      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: 12, rowGap: 7, paddingVertical: 12 }}>
-        <View style={filterGroup}>
-          {historyAgents.map((value) => (
-            <Control key={value} label={agentLabels[value]} theme={theme} selected={agent === value} compact={compact}
-              onPress={() => { setAgent(value); setOffset(0); }} />
-          ))}
+      {compact ? (
+        <View style={{ gap: 8, paddingVertical: 12 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>{agents}{reload}</View>
+          {periods}
         </View>
-        <View style={filterGroup}>
-          {historyPeriods.map((value) => (
-            <Control key={value} label={t(value)} theme={theme} selected={period === value} compact={compact}
-              onPress={() => { setPeriod(value); setOffset(0); }} />
-          ))}
+      ) : (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 12 }}>
+          {agents}<View style={{ flex: 1 }} />{periods}{reload}
         </View>
-        <View style={{ flexGrow: 1, alignItems: "flex-end" }}>
-          <Control label={t("reload")} theme={theme} icon="RefreshCw" onPress={refresh} compact={compact} />
-        </View>
-      </View>
+      )}
       {page ? (
         <>
           {!compact && page.rows.length ? <TableHeading theme={theme} /> : null}
