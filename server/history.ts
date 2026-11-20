@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { historyAccessTypes, historyPageSizes, type HistoryInput, type HistoryOutput, type HistoryRow } from "../shared/history.ts";
+import { historyAccessTypes, historyPageSizes, type HistoryInput, type HistoryOutput, type HistoryRow, type UsageOverviewData } from "../shared/history.ts";
 import { readConfig, type MagpieConfig } from "./config.ts";
 import { redact } from "./source.ts";
 
@@ -9,6 +9,15 @@ const optionalCount = count.optional().catch(undefined);
 const optionalText = z.string().optional().catch(undefined);
 const optionalCharge = z.number().nonnegative().optional().catch(undefined);
 export const gatewayHistoryPageSize = 500;
+const usageTotals = z.object({
+  calls: count, input: count, output: count, cache_read: count, cache_write: count,
+  cache_unknown: count.default(0), cost: z.number().nonnegative(), unpriced: count.default(0),
+}).refine(({ input, output, cache_read, cache_write }) => Number.isSafeInteger(input + output + cache_read + cache_write));
+const gatewayPoint = z.object({ time: z.iso.datetime({ offset: true }) });
+const usageSeries = z.object({
+  bucket: z.enum(["hour", "day"]),
+  series: z.array(z.intersection(usageTotals, gatewayPoint)).max(32),
+});
 const usagePage = z.object({
   rows: z.array(z.unknown()).max(gatewayHistoryPageSize),
   offset: count, total: count,
@@ -52,7 +61,7 @@ const usageRow = z.object({
 });
 
 type UsageRow = z.infer<typeof usageRow>;
-type UsagePage = z.infer<typeof usagePage>;
+type UsagePage = z.infer<typeof usagePage> & { overview?: UsageOverviewData };
 export type HistoryRecord = { row: HistoryRow; sessionKey?: string };
 type HistorySession = NonNullable<HistoryRow["session"]>;
 type SessionIdentity = { provider: string; sessionId: string | null };
@@ -243,13 +252,50 @@ export function projectHistoryRequest(row: UsageRow, accountNames: ReadonlyMap<s
   };
 }
 
-export async function projectHistory(body: unknown, secret?: string, list?: SessionDirectory): Promise<HistoryOutput> {
+function projectTotals(totals: z.infer<typeof usageTotals>) {
+  const { calls, input, output, cache_read: cacheRead, cache_write: cacheWrite, cache_unknown: unknown, cost, unpriced } = totals;
+  const prompt = input + cacheRead + cacheWrite;
+  const knownPrompt = prompt - unknown;
+  return {
+    requests: calls, costUsd: cost, unpriced, tokens: prompt + output, input, output, cacheRead, cacheWrite,
+    ...(knownPrompt > 0 && cacheRead <= knownPrompt ? { cacheHit: cacheRead / knownPrompt } : {}),
+  };
+}
+
+function decodeUsagePage(body: unknown): UsagePage | undefined {
   const parsed = usagePage.safeParse(body);
-  if (!parsed.success || parsed.data.rows.length > Math.max(...historyPageSizes)) return { state: "unavailable" };
-  const { rows, offset, total, accounts } = parsed.data;
+  if (!parsed.success) return;
+  const page = parsed.data;
+  const totals = usageTotals.safeParse(body);
+  if (!totals.success) return page;
+  const through = (body as { through?: unknown }).through;
+  const gateway = usageTotals.safeParse(through);
+  // Older gateways can ignore `via=through`. A summary with broader scope
+  // must not be associated with a gateway-only request list.
+  if (gateway.success && Object.keys(totals.data).some((key) => {
+    const field = key as keyof typeof totals.data;
+    const delta = Math.abs(totals.data[field] - gateway.data[field]);
+    return delta > (field === "cost" ? 1e-6 : 0);
+  })) return page;
+  if (page.rows.some((row) => !!(row && typeof row === "object" && "source" in row && row.source))) return page;
+  const chart = usageSeries.safeParse(body);
+  const now = Date.now();
+  const series = chart.success ? chart.data.series.filter(({ time }) => Date.parse(time) <= now)
+    .map((point) => ({ time: point.time, ...projectTotals(point) })) : [];
+  return { ...page, overview: { totals: projectTotals(totals.data), bucket: chart.data?.bucket, series } };
+}
+
+async function projectHistoryPage(page: UsagePage, secret?: string, list?: SessionDirectory): Promise<HistoryOutput> {
+  const { rows, offset, total, accounts, overview } = page;
+  if (rows.length > Math.max(...historyPageSizes)) return { state: "unavailable" };
   const names = historyAccountNames(accounts);
   const records = gatewayRequests(rows).flatMap((row) => projectHistoryRequest(row, names, secret) ?? []);
-  return { state: "ready", rows: await historyRows(records, secret, list), offset, total };
+  return { state: "ready", rows: await historyRows(records, secret, list), offset, total, ...(overview ? { overview } : {}) };
+}
+
+export async function projectHistory(body: unknown, secret?: string, list?: SessionDirectory): Promise<HistoryOutput> {
+  const page = decodeUsagePage(body);
+  return page ? projectHistoryPage(page, secret, list) : { state: "unavailable" };
 }
 
 type GatewayPage = ({ state: "ready" } & UsagePage) | Exclude<HistoryOutput, { state: "ready" | "expired" }>;
@@ -271,8 +317,8 @@ export async function readGatewayHistoryPage(
     if (response.status === 401 || response.status === 403) return { state: "forbidden" };
     if (response.status === 404 || response.status === 405) return { state: "unsupported" };
     if (!response.ok) return { state: "unavailable" };
-    const page = usagePage.safeParse(await response.json());
-    return page.success ? { state: "ready", ...page.data } : { state: "unavailable" };
+    const page = decodeUsagePage(await response.json());
+    return page ? { state: "ready", ...page } : { state: "unavailable" };
   } catch {
     return { state: "unavailable" };
   } finally {
@@ -285,7 +331,7 @@ export function createHistoryReader(loadConfig: () => Promise<MagpieConfig> = re
     try {
       const config = await loadConfig();
       const page = await readGatewayHistoryPage(config, period, offset, limit, request);
-      return page.state === "ready" ? projectHistory(page, config.apiKey, list) : page;
+      return page.state === "ready" ? projectHistoryPage(page, config.apiKey, list) : page;
     } catch {
       return { state: "unavailable" };
     }

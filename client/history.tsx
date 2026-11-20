@@ -1,7 +1,7 @@
 /* Hallmark · v2.0.0 · scope: app · genre: modern-minimal · theme: Paseo · signature: request ledger */
 /* Hallmark · pre-emit critique: compact controls leave the request list more room while preserving touch targets. */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, SafeAreaView, Text, View, type TextStyle, type ViewStyle } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, SafeAreaView, SectionList, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import {
   defineTranslations, useRpc, useTranslation, type PluginClientContext,
   type PluginScreenProps, type PluginSidebarItemProps,
@@ -13,6 +13,7 @@ import {
 } from "../shared/history.ts";
 import { magpieIcon } from "../shared/icon.ts";
 import { PerformanceTrend, trendColors, type TrendSelection } from "./history-trend.tsx";
+import { UsageOverview, type UsageMetric } from "./usage-overview.tsx";
 
 const messages = defineTranslations({
   resources: {
@@ -717,6 +718,8 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
   const [comparisonPeriod, setComparisonPeriod] = useState<HistoryInput["period"]>("7d");
   const [modelId, setModelId] = useState<string>();
   const [route, setRoute] = useState<RouteFilter>();
+  const [usageMetric, setUsageMetric] = useState<UsageMetric>("costUsd");
+  const [usageExpanded, setUsageExpanded] = useState(true);
   const [offset, setOffset] = useState(0);
   const [limit, setLimit] = useState<HistoryPageSize>(50);
   const [revision, setRevision] = useState(0);
@@ -847,12 +850,15 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
         ) : null}
         <View style={{ flex: 1, minHeight: 0, borderWidth: compact ? 0 : 1, borderColor: colors.border, borderRadius: compact ? 0 : toolbarRadius }}>
           {page ? (
-            <FlatList style={{ flex: 1 }} key={key} data={page.rows} contentContainerStyle={compact ? { paddingBottom: 8 } : undefined}
+            <SectionList style={{ flex: 1, borderTopLeftRadius: compact ? 0 : toolbarRadius, borderTopRightRadius: compact ? 0 : toolbarRadius }}
+              key={key} sections={page.rows.length ? [{ data: page.rows }] : []} contentContainerStyle={compact ? { paddingBottom: 8 } : undefined}
               renderItem={({ item }) => <RequestRow row={item} theme={theme} compact={compactRows}
                 dateFormat={dateFormat} openSession={openSession} />}
               keyExtractor={(item, index) => `${item.time}:${index}`}
-              ListHeaderComponent={!compactRows && page.rows.length > 0 ? <TableHeading theme={theme} /> : undefined}
-              stickyHeaderIndices={!compactRows && page.rows.length > 0 ? [0] : undefined}
+              ListHeaderComponent={!route && page.overview ? <UsageOverview data={page.overview} theme={theme} compact={compact}
+                metric={usageMetric} setMetric={setUsageMetric} expanded={usageExpanded} setExpanded={setUsageExpanded} /> : undefined}
+              renderSectionHeader={!compactRows ? () => <TableHeading theme={theme} /> : undefined}
+              stickySectionHeadersEnabled={!compactRows}
               ListEmptyComponent={<Text style={{ color: colors.foregroundMuted, padding: tableGutter }}>{t("empty")}</Text>} />
           ) : (
             <View style={{ flex: 1, alignItems: "center", paddingVertical: 28, gap: 8 }}>

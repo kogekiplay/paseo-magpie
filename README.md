@@ -4,15 +4,25 @@
 
 <h1 align="center">Magpie for Paseo</h1>
 
-<p align="center">Magpie 额度、实际路由、请求历史与供应商性能对比。</p>
+<p align="center">Magpie 额度、用量趋势、实际路由与供应商性能对比。</p>
 
-在 [Paseo](https://paseo.sh) 原生额度入口查看 [Magpie](https://github.com/yetone/magpie) 的账号用量，在会话里查看实际路由。侧栏的「Magpie 用量」提供请求明细和各供应商的首字延迟、TPS 趋势。
+在 [Paseo](https://paseo.sh) 原生额度入口查看 [Magpie](https://github.com/yetone/magpie) 的账号用量，在会话里查看实际路由。侧栏的「Magpie 用量」提供总成本、Token 和请求趋势，以及各供应商的首字延迟与 TPS。
 
-![Magpie 供应商性能趋势，Paseo 界面与示例数据](assets/preview.png)
+![Magpie 用量总览与请求列表，Paseo 界面与示例数据](assets/request-history.png)
 
 图标使用 [Magpie 官方图形](https://github.com/yetone/magpie/tree/main/internal/gui/assets/icons)，原始许可见 [assets/MAGPIE-LICENSE](assets/MAGPIE-LICENSE)。
 
-Track account quotas, inspect actual routes, and compare provider latency and speed trends by served model in Paseo.
+Track account quotas, request costs and tokens, actual routes, and provider performance in Paseo.
+
+## 功能预览
+
+以下画面来自 Paseo 插件界面，使用示例数据。
+
+| 性能对比 | 原生额度 |
+| --- | --- |
+| [![供应商曲线、首字 P90 与 TPS](assets/preview.png)](assets/preview.png) | [![多账号汇总额度、各账号窗口和重置时间](assets/native-quotas.png)](assets/native-quotas.png) |
+| **实际路由** | **网关设置** |
+| [![实时接收大小、回退与已完成轮次的路由](assets/routes.png)](assets/routes.png) | [![Paseo 内的远程 Magpie 地址和配套插件指南](assets/gateway-settings.png)](assets/gateway-settings.png) |
 
 ## 安装
 
@@ -59,6 +69,8 @@ Codex 和 Claude Code 会话的输入框附近按顺序显示 Magpie 最近一�
 
 在 Paseo 侧栏打开「Magpie 用量」，可按时间倒序查看所有 Agent 的网关请求，按今天、近 7 天或近 30 天翻页。每条记录显示 Agent、请求和实际模型、供应商与账号、协议、输入和输出 token、缓存命中率、费用、首字延迟、总耗时、TPS 及 HTTP 状态。输入量采用 Magpie 的未缓存输入口径，缓存命中率以完整提示词为分母。美元费用采用 Magpie 的估算，账号使用 Magpie 的显示名或遮蔽后的登录标识。`≥` 是 Magpie 口径下的速度下界，`—` 表示数据不足。
 
+请求列表上方显示所选范围的总成本、总请求数、Token 总量和缓存命中率。点击指标切换趋势，今天按小时显示，近 7 天和近 30 天按天显示。点图柱可看对应时段的数值。Token 总量包括新增输入、输出、缓存读取和写入。缓存命中率用缓存读取量除以已知缓存情况的输入量。成本是 Magpie 根据已知价格估算的美元金额，成本趋势会注明未计价的请求数。
+
 历史页直接读取已配置网关的 `/v1/magpie/usage/requests`，能显示 Magpie 已保留的旧记录。精确关联到当前主机的请求会显示 Paseo 里的会话名称，点击可打开对应会话。刷新后会显示最新的名称。Paseo 客户端仅接收展示和导航所需的字段。
 
 点「性能对比」可按实际模型比较各供应商，默认查看近 7 天。每家显示请求数、首字延迟 P50 和 P90、TPS 中位数及有效样本数。耗时和速度使用已完成的请求，TPS 只统计有实测速率的记录。点供应商可查看同一批请求，并从明细返回来源会话。统计使用所选日期范围内最近最多 50,000 条网关记录。
@@ -87,7 +99,9 @@ Codex 需要在同机、同一用户下运行 Magpie 和 Paseo 守护进程，�
 
 ## 可选配置
 
-默认无需配置。使用其他地址或需要密钥时，在**守护进程所在主机**创建配置文件：
+默认无需配置。要连接远程 Magpie，打开 **Paseo → 设置 → 插件 → Magpie**，填写「网关地址」并保存。地址须能从 Paseo 守护进程所在主机访问。同一主机的桌面和手机共用这项设置。留空并保存会恢复主机配置，主机未配置时使用 `http://127.0.0.1:3425`。保存后可手动刷新已打开的用量页和额度页。
+
+远程网关需要密钥时，在**守护进程所在主机**的配置文件中同时填写网关地址和密钥：
 
 - macOS / Linux：`~/.config/paseo-magpie/config.json`
 - 设置了 `XDG_CONFIG_HOME` 时：`$XDG_CONFIG_HOME/paseo-magpie/config.json`
@@ -103,17 +117,17 @@ Codex 需要在同机、同一用户下运行 Magpie 和 Paseo 守护进程，�
 
 只需填写用到的字段。`url` 支持网关根地址或以 `/v1` 结尾的 API 地址，也支持反向代理路径前缀。超时范围为 100–15000 毫秒。
 
-远程访问需要 Magpie 允许网络共享，并使用有权读取额度的网关密钥。受限密钥可见的账号由 Magpie 决定。插件不申请管理权限。
+远程访问需要在 Magpie 启用网络共享。需要密钥时，使用有权读取所需用量、额度和路由的网关密钥。Paseo 设置里的地址与主机配置地址一致时，才会使用该密钥。
 
 配置也可以通过守护进程的环境变量设置：
 
 | 环境变量 | 用途 |
 | --- | --- |
 | `PASEO_MAGPIE_CONFIG` | 配置文件路径 |
-| `PASEO_MAGPIE_URL` | 覆盖网关地址 |
+| `PASEO_MAGPIE_URL` | 覆盖设置页和配置文件的网关地址 |
 | `PASEO_MAGPIE_API_KEY` | 覆盖网关密钥 |
 
-配置文件每次读取额度或路由时重新读取。修改后在 Usage 中刷新即可，路由会自动重新读取；新增或移除账号时刷新额度列表。配置文件和密钥无需放进源码目录。
+配置文件在插件查询网关前读取。修改后可刷新 Usage 和用量页，实时路由会自动重新查询。配置文件和密钥保存在守护进程主机。
 
 ## 开发
 

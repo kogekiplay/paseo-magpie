@@ -202,8 +202,11 @@ export function createRouteWatcher(deps: Dependencies) {
   };
 }
 
-export function handleRouteWatch(input: RouteInput, context: PluginSubscriptionContext<RouteState>) {
+export function handleRouteWatch(
+  input: RouteInput, context: PluginSubscriptionContext<RouteState>, config: () => Promise<MagpieConfig> = readConfig,
+) {
   const watch = createRouteWatcher({
+    config,
     resolve: async ({ agentId }) => {
       const agent = context.paseo.agents.ref(agentId);
       const result = await agent.refresh();

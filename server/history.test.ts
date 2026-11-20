@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { getHistory } from "../shared/history.ts";
 import { createHistoryReader, projectHistory } from "./history.ts";
 
 const base = {
@@ -57,6 +58,55 @@ test("reads one gateway page across agents in ledger order and exposes only allo
   assert.doesNotMatch(JSON.stringify(result), /private-/);
   const denied = createHistoryReader(config, async () => new Response("private details", { status: 403 }));
   assert.deepEqual(await denied({ period: "today", offset: 0 }), { state: "forbidden" });
+});
+
+test("uses period totals across pages and subtracts unknown prompt tokens from the cache denominator", async () => {
+  const totals = {
+    calls: 180, input: 100, output: 20, cache_read: 70, cache_write: 30,
+    cache_unknown: 50, cost: 8.75, unpriced: 4,
+  };
+  const time = "2025-01-02T13:00:00+08:00";
+  const unknownTime = "2025-01-02T14:00:00+08:00";
+  const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const read = createHistoryReader(async () => ({ url: "http://127.0.0.1:3425/", timeoutMs: 1_000 }), async (url) => {
+    const query = new URL(String(url)).searchParams;
+    assert.equal(query.get("via"), "through");
+    return Response.json({
+      ...totals, through: totals,
+      rows: [base], total: 182, offset: Number(query.get("offset")),
+      bucket: "hour",
+      series: [
+        { ...totals, time, by: { byAgent: "private-dimensions" } },
+        { ...totals, time: unknownTime, input: 50, cache_read: 0, cache_write: 0, cache_unknown: 50 },
+        { ...totals, time: future },
+      ],
+    });
+  });
+  const first = getHistory.output.parse(await read({ period: "today", offset: 0 }));
+  const next = getHistory.output.parse(await read({ period: "today", offset: 50, limit: 50 }));
+  assert.equal(first.state, "ready");
+  assert.equal(next.state, "ready");
+  assert.equal(next.total, 182);
+  assert.equal(next.offset, 50);
+  assert.deepEqual(first.overview, next.overview);
+  assert.deepEqual(first.overview?.totals, {
+    requests: 180, input: 100, output: 20, cacheRead: 70, cacheWrite: 30,
+    tokens: 220, cacheHit: 70 / 150, costUsd: 8.75, unpriced: 4,
+  });
+  assert.equal(first.overview?.bucket, "hour");
+  assert.deepEqual(first.overview?.series.map((point) => [point.time, point.cacheHit]), [[time, 70 / 150], [unknownTime, undefined]]);
+  assert.doesNotMatch(JSON.stringify(first), /private-dimensions/);
+});
+
+test("preserves the request list when gateway totals are missing or include direct calls", async () => {
+  const page = { rows: [base], offset: 0, total: 1 };
+  const totals = { calls: 50, input: 500, output: 100, cache_read: 100, cache_write: 0, cost: 1 };
+  for (const response of [page, { ...page, ...totals, through: { ...totals, calls: 1 } }]) {
+    const result = await projectHistory(response);
+    assert.equal(result.state, "ready");
+    assert.equal(result.rows.length, 1);
+    assert.equal(result.overview, undefined);
+  }
 });
 
 test("links only unique native sessions on the selected host and reads their current Paseo titles", async () => {

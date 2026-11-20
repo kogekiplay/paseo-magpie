@@ -3,14 +3,17 @@
   "name": "Magpie",
   "icon": "assets/icon.png",
   "media": [
+    "assets/request-history.png",
     "assets/preview.png",
-    "assets/request-history.png"
+    "assets/native-quotas.png",
+    "assets/routes.png",
+    "assets/gateway-settings.png"
   ],
-  "description": "Track Magpie quotas, inspect actual routes, and compare provider latency and TPS trends.",
+  "description": "Track Magpie quotas, request costs and tokens, actual routes, and provider performance.",
   "translations": {
     "zh-CN": {
       "name": "Magpie",
-      "description": "查看 Magpie 账号额度和实际路由，按模型比较供应商的首字延迟和 TPS 趋势。"
+      "description": "查看 Magpie 额度、请求成本、Token 用量和实际路由，并按模型比较供应商性能。"
     }
   },
   "requirements": {

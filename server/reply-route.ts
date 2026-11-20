@@ -90,6 +90,7 @@ export function finalReplyId(
 export async function recordReplyRoute(
   { agent, turnId, outcome }: PluginHookPayload<"agent.turn.after">,
   { paseo, signal }: PluginHookContext,
+  loadConfig = readConfig,
 ) {
   if ((agent.provider !== "claude" && agent.provider !== "codex") || !turnId || outcome.kind !== "completed") return;
   const ref = paseo.agents.ref(agent.id);
@@ -100,7 +101,7 @@ export async function recordReplyRoute(
   };
 
   try {
-    const config = await readConfig();
+    const config = await loadConfig();
     if (!isLoopbackGateway(config.url) || signal.aborted) return;
     const messageId = await latestReplyId();
     if (!messageId) return;

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { normalizeUrl, readConfig } from "./config.ts";
+import { gatewaySettings } from "../shared/gateway-settings.ts";
 
 test("normalizes gateway URLs and rejects credentials, query strings, and non-HTTP schemes", () => {
   assert.equal(normalizeUrl("http://localhost:3425"), "http://localhost:3425/");
@@ -29,4 +30,36 @@ test("uses defaults, re-reads settings, and accepts environment overrides withou
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("a saved host address overrides the file without carrying the file's key to another gateway", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "paseo-magpie-config-"));
+  const path = join(directory, "config.json");
+  const env = { PASEO_MAGPIE_CONFIG: path };
+  try {
+    await writeFile(path, JSON.stringify({ url: "https://magpie.example/old", apiKey: "daemon-only-key", timeoutMs: 5_000 }));
+    assert.deepEqual(await readConfig(env, "https://magpie.example/new/v1"), {
+      url: "https://magpie.example/new/", apiKey: undefined, timeoutMs: 5_000,
+    });
+    assert.equal((await readConfig(env, "https://another.example")).apiKey, undefined);
+    assert.equal((await readConfig(env, "https://magpie.example/old/v1")).apiKey, "daemon-only-key");
+    assert.equal((await readConfig(env, "")).url, "https://magpie.example/old/");
+    assert.deepEqual(await readConfig({ ...env, PASEO_MAGPIE_URL: "https://override.example" }, "https://ignored.example"), {
+      url: "https://override.example/", apiKey: "daemon-only-key", timeoutMs: 5_000,
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("validates host settings without repeatedly stripping the gateway API suffix", () => {
+  assert.deepEqual(gatewaySettings.schema.parse({}), { url: "" });
+  const url = "https://magpie.example/proxy/v1/v1/";
+  const values = gatewaySettings.schema.parse({ url: ` ${url} ` });
+  assert.deepEqual(gatewaySettings.schema.parse(values), { url });
+  assert.equal(normalizeUrl(values.url), "https://magpie.example/proxy/v1/");
+  for (const url of ["host:3425", "ftp://host", "https://user:password@host", "http://host/?key=example", "http://host/#fragment"]) {
+    assert.equal(gatewaySettings.schema.safeParse({ url }).success, false);
+  }
+  assert.equal(gatewaySettings.schema.safeParse({ url: "", apiKey: "not-a-host-field" }).success, false);
 });

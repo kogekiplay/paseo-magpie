@@ -8,6 +8,7 @@ export const historyAccessTypes = ["subscription", "api"] as const;
 
 const comparisonId = z.string().regex(/^[a-f0-9]{64}$/);
 const timestamp = z.number().int().positive().safe();
+const count = z.number().int().nonnegative().safe();
 const historyError = z.object({ state: z.enum(["forbidden", "unsupported", "unavailable"]) });
 
 export const historyInput = z.object({
@@ -46,12 +47,31 @@ const historyRow = z.object({
   session: z.object({ agentId: z.string().min(1), title: z.string() }).optional(),
 });
 
+const usageTotals = z.object({
+  requests: count,
+  costUsd: z.number().nonnegative(),
+  unpriced: count,
+  tokens: count,
+  input: count,
+  output: count,
+  cacheRead: count,
+  cacheWrite: count,
+  cacheHit: z.number().min(0).max(1).optional(),
+});
+
+const usageOverview = z.object({
+  totals: usageTotals,
+  bucket: z.enum(["hour", "day"]).optional(),
+  series: z.array(usageTotals.extend({ time: z.iso.datetime({ offset: true }) })).max(32),
+});
+
 export const historyOutput = z.discriminatedUnion("state", [
   z.object({
     state: z.literal("ready"),
     rows: z.array(historyRow).max(Math.max(...historyPageSizes)),
     offset: z.number().int().nonnegative().safe(),
     total: z.number().int().nonnegative().safe(),
+    overview: usageOverview.optional(),
   }),
   historyError,
   z.object({ state: z.literal("expired") }),
@@ -106,6 +126,7 @@ export type HistoryInput = z.infer<typeof historyInput>;
 export type HistoryOutput = z.infer<typeof historyOutput>;
 export type HistoryRow = z.infer<typeof historyRow>;
 export type HistoryPageSize = (typeof historyPageSizes)[number];
+export type UsageOverviewData = z.infer<typeof usageOverview>;
 export type ComparisonInput = z.infer<typeof comparisonInput>;
 export type ComparisonOutput = z.infer<typeof comparisonOutput>;
 export type ComparisonProvider = z.infer<typeof comparisonProvider>;
