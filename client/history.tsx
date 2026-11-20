@@ -1,13 +1,16 @@
 /* Hallmark · v2.0.0 · scope: app · genre: modern-minimal · theme: Paseo · signature: request ledger */
 /* Hallmark · pre-emit critique: compact controls leave the request list more room while preserving touch targets. */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, SafeAreaView, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import {
   defineTranslations, useRpc, useTranslation, type PluginClientContext,
   type PluginScreenProps, type PluginSidebarItemProps,
 } from "@getpaseo/plugin/client";
 import { Icon, Modal, SidebarRow, TextInput } from "@getpaseo/plugin/client/ui";
-import { getHistory, historyPageSizes, historyPeriods, type HistoryInput, type HistoryOutput, type HistoryPageSize, type HistoryRow } from "../shared/history.ts";
+import {
+  getComparison, getHistory, historyPageSizes, historyPeriods,
+  type ComparisonOutput, type ComparisonProvider, type HistoryInput, type HistoryOutput, type HistoryPageSize, type HistoryRow,
+} from "../shared/history.ts";
 import { magpieIcon } from "../shared/icon.ts";
 
 const messages = defineTranslations({
@@ -35,6 +38,15 @@ const messages = defineTranslations({
       metricHint: "Speed lower bound",
       details: "Details", hideDetails: "Hide details",
       choosePeriod: "Choose date range", periodFilter: "Choose date range. Current: {{period}}",
+      compare: "Compare routes", requests: "Requests", chooseModel: "Choose served model",
+      selectModel: "Choose served model. Current: {{model}}", supplier: "Provider",
+      p50: "First token P50", p90: "First token P90", tpsP50: "Median TPS",
+      samples: "{{size}} samples", comparing: "Comparing request history…",
+      noModels: "No gateway requests with a served model in this period.",
+      comparisonUnavailable: "Could not compare routes. Try again or choose a shorter range.",
+      viewRoute: "View requests for {{provider}} and {{model}}",
+      clearRoute: "Clear provider and model filter",
+      limited: "Includes the {{size}} most recent gateway records in this period.",
     },
     "zh-CN": {
       title: "Magpie 请求历史", sidebar: "Magpie 用量", today: "今天", "7d": "近 7 天", "30d": "近 30 天",
@@ -59,6 +71,15 @@ const messages = defineTranslations({
       metricHint: "速度下界",
       details: "详情", hideDetails: "收起",
       choosePeriod: "选择日期范围", periodFilter: "选择日期范围，当前 {{period}}",
+      compare: "性能对比", requests: "请求列表", chooseModel: "选择实际模型",
+      selectModel: "选择实际模型，当前 {{model}}", supplier: "供应商",
+      p50: "首字 P50", p90: "首字 P90", tpsP50: "TPS 中位数",
+      samples: "{{size}} 个样本", comparing: "正在统计历史请求…",
+      noModels: "这段时间没有记录实际模型的网关请求。",
+      comparisonUnavailable: "无法完成路由对比。可以重试或缩短日期范围。",
+      viewRoute: "查看 {{provider}} 的 {{model}} 请求",
+      clearRoute: "清除供应商和模型筛选",
+      limited: "统计范围为此期间最近 {{size}} 条网关记录。",
     },
   },
 });
@@ -127,7 +148,7 @@ function Control({ label, onPress, theme, selected, disabled, icon, segment, var
         : segment ? { top: 4, bottom: 4, left: 0, right: 0 }
         : pagination ? { top: 5, bottom: 5, left: 0, right: 0 } : 4}
       style={({ pressed }) => ({
-        minHeight: height, minWidth: size === "compact" && !display ? touchControlHeight : height,
+        minHeight: height, minWidth: size === "compact" && !display ? touchControlHeight : height, maxWidth: "100%",
         alignItems: "center", justifyContent: "center",
         flexDirection: "row", gap: 6,
         paddingHorizontal: disclosure ? 8 : variant === "pageSize" ? 10 : icon || pagination ? 0 : 10,
@@ -139,12 +160,24 @@ function Control({ label, onPress, theme, selected, disabled, icon, segment, var
         opacity: disabled ? 0.48 : pressed ? 0.8 : 1,
       })}
     >
-      {!icon || display ? <Text style={[pagination && numeric, { color: textColor, fontSize: 13, fontWeight: selected ? "600" : "500" }]}>{display ?? label}</Text> : null}
-      {icon ? <View pointerEvents="none" aria-hidden>
+      {!icon || display ? <Text numberOfLines={1} style={[pagination && numeric, { flexShrink: 1, color: textColor, fontSize: 13, fontWeight: selected ? "600" : "500" }]}>{display ?? label}</Text> : null}
+      {icon ? <View pointerEvents="none" aria-hidden style={{ flexShrink: 0 }}>
         <Icon icon={icon} color={textColor} size={disclosure ? 13 : 16} />
       </View> : null}
     </Pressable>
   );
+}
+
+function formatTiming(ms: number | undefined, milliseconds: string, seconds: string) {
+  if (ms === undefined) return ["—"];
+  return ms < 1_000 ? [String(Math.round(ms)), milliseconds]
+    : [(ms / 1_000).toFixed(ms < 10_000 ? 1 : 0), seconds];
+}
+
+function timingColor(colors: Theme["colors"], ms: number | undefined, [fast, slow]: readonly [number, number]) {
+  if (ms === undefined) return colors.foregroundMuted;
+  if (ms < fast) return colors.statusSuccess;
+  return ms < slow ? colors.statusWarning : colors.statusDanger;
 }
 
 function TableHeading({ theme }: { theme: Theme }) {
@@ -228,13 +261,7 @@ function RequestRow({ row, theme, compact, dateFormat, openSession }: {
   const statusColor = row.outcome === "failed" ? colors.statusDanger
     : row.outcome === "completed" && row.status && row.status < 400 ? colors.statusSuccess : colors.foregroundMuted;
   const date = new Date(row.time);
-  const formatTime = (ms: number | undefined) => ms === undefined ? ["—"] : ms < 1_000
-    ? [String(ms), t("milliseconds")] : [(ms / 1_000).toFixed(ms < 10_000 ? 1 : 0), t("seconds")];
-  function timeColor(ms: number | undefined, [fast, slow]: readonly [number, number]) {
-    if (ms === undefined) return colors.foregroundMuted;
-    if (ms < fast) return colors.statusSuccess;
-    return ms < slow ? colors.statusWarning : colors.statusDanger;
-  }
+  const formatTime = (ms: number | undefined) => formatTiming(ms, t("milliseconds"), t("seconds"));
   const formatTokens = (value: number | undefined) => value === undefined ? "—" : tokenFormat.format(value);
   const credits = row.credits === undefined ? undefined : `${countFormat.format(row.credits)} ${t("credits")}`;
   const readCost = row.costUsd === undefined ? credits : formatCost(row.costUsd);
@@ -244,8 +271,8 @@ function RequestRow({ row, theme, compact, dateFormat, openSession }: {
     output: { reading: [formatTokens(row.outputTokens)], hint: row.outputTokens === undefined ? undefined : countFormat.format(row.outputTokens) },
     cache: { reading: [row.cacheHit === undefined ? "—" : formatCacheHit(row.cacheHit)] },
     cost: { reading: [readCost ?? "—"], color: readCost ? colors.statusSuccess : undefined, hint: costLabel },
-    ttft: { reading: formatTime(row.ttftMs), color: timeColor(row.ttftMs, timingThresholds.ttft) },
-    duration: { reading: formatTime(row.durationMs), color: timeColor(row.durationMs, timingThresholds.duration) },
+    ttft: { reading: formatTime(row.ttftMs), color: timingColor(colors, row.ttftMs, timingThresholds.ttft) },
+    duration: { reading: formatTime(row.durationMs), color: timingColor(colors, row.durationMs, timingThresholds.duration) },
     speed: { reading: row.speed ? [`${row.speed.lowerBound ? "≥" : ""}${Math.round(row.speed.tps)}`, t("tokens")] : ["—"] },
   };
   const protocol = row.protocol;
@@ -506,43 +533,202 @@ function HistoryPagination({ total, offset, limit, theme, compact, sizeOpen, set
   );
 }
 
+const comparisonMetrics = ["p50", "p90", "tpsP50"] as const;
+
+function ProviderComparisonRow({ row, model, theme, compact, last, onPress }: {
+  row: ComparisonProvider; model: string; theme: Theme; compact: boolean; last: boolean; onPress: () => void;
+}) {
+  const { t } = useTranslation(messages);
+  const { colors } = theme;
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const formatTime = (ms: number | undefined) => formatTiming(ms, t("milliseconds"), t("seconds")).join(" ");
+  const metrics = [
+    { value: formatTime(row.ttft?.p50), count: row.ttft?.count, color: timingColor(colors, row.ttft?.p50, timingThresholds.ttft) },
+    { value: formatTime(row.ttft?.p90), color: timingColor(colors, row.ttft?.p90, timingThresholds.ttft) },
+    { value: row.speed ? countFormat.format(Math.round(row.speed.p50)) : "—", count: row.speed?.count,
+      color: row.speed ? colors.foreground : colors.foregroundMuted },
+  ];
+  const hint = metrics.map(({ value, count }, i) =>
+    `${t(comparisonMetrics[i])} ${value}${count ? `, ${t("samples", { size: countFormat.format(count) })}` : ""}`).join(". ");
+  const meta = { color: colors.foregroundMuted, fontSize: 12 };
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={t("viewRoute", { provider: row.name, model })}
+      accessibilityHint={`${t("total", { total: countFormat.format(row.requests) })}. ${hint}`}
+      onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)}
+      style={({ pressed }) => ({
+        flexDirection: compact ? "column" : "row", gap: compact ? 10 : 14,
+        paddingHorizontal: tableGutter, paddingVertical: compact ? 13 : 14,
+        borderWidth: 1, borderColor: focused ? colors.accent : "transparent",
+        borderBottomColor: focused ? colors.accent : last ? "transparent" : colors.border,
+        backgroundColor: pressed || hovered ? colors.surface1 : colors.surface0,
+      })}>
+      <View style={{ flex: compact ? undefined : 1.4, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+          <Text numberOfLines={2} style={{ color: colors.accent, fontSize: 14, fontWeight: "600" }}>{row.name}</Text>
+          <Text style={[numeric, meta]}>{t("total", { total: countFormat.format(row.requests) })}</Text>
+        </View>
+        {compact ? <Icon icon="ChevronRight" color={colors.accent} size={16} /> : null}
+      </View>
+      <View style={{ flex: compact ? undefined : 3, flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+        {metrics.map(({ value, count, color }, i) => (
+          <View key={comparisonMetrics[i]} style={{ flex: 1, minWidth: 0, gap: 2 }}>
+            {compact ? <Text style={meta}>{t(comparisonMetrics[i])}</Text> : null}
+            <Text style={[numeric, { color, fontSize: compact ? 16 : 17, fontWeight: "600" }]}>{value}</Text>
+            {count ? <Text style={[numeric, meta]}>{t("samples", { size: countFormat.format(count) })}</Text> : null}
+          </View>
+        ))}
+      </View>
+      {!compact ? <View style={{ justifyContent: "center" }}><Icon icon="ChevronRight" color={colors.accent} size={16} /></View> : null}
+    </Pressable>
+  );
+}
+
+type RouteFilter = { id: string; provider: string; model: string };
+
+function PerformanceComparison({ theme, compact, data, selectedModel, selectModel, showRequests, retry }: {
+  theme: Theme; compact: boolean; data: ComparisonOutput | undefined; selectedModel: string | undefined;
+  selectModel: (id: string) => void; showRequests: (route: RouteFilter) => void; retry: () => void;
+}) {
+  const { t } = useTranslation(messages);
+  const { colors } = theme;
+  const [choosing, setChoosing] = useState(false);
+  const models = data?.state === "ready" ? data.models : [];
+  const model = models.find(({ id }) => id === selectedModel) ?? models[0];
+  const caption = { color: colors.foregroundMuted, fontSize: 12 };
+  if (!model) {
+    return (
+      <View style={{ alignItems: "center", gap: 8, paddingHorizontal: tableGutter, paddingVertical: 28 }}>
+        {data ? (
+          <>
+            <Text style={{ color: colors.foregroundMuted, textAlign: "center" }}>
+              {t(data.state === "ready" ? "noModels" : data.state === "unavailable" ? "comparisonUnavailable" : data.state)}
+            </Text>
+            {data.state !== "ready" ? <Control label={t("retry")} theme={theme} onPress={retry} /> : null}
+          </>
+        ) : (
+          <>
+            <ActivityIndicator color={colors.foregroundMuted} />
+            <Text accessibilityLiveRegion="polite" style={caption}>{t("comparing")}</Text>
+          </>
+        )}
+      </View>
+    );
+  }
+  return (
+    <View style={{ flex: 1, minHeight: 0, width: "100%", maxWidth: 860, alignSelf: "center", gap: 8 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 2 }}>
+        <Text style={caption}>{t("model")}</Text>
+        <View style={{ flexShrink: 1, minWidth: 0 }}>
+          <Control label={t("selectModel", { model: model.name })} display={model.name} icon="ChevronDown" theme={theme}
+            variant="pageSize" size={compact ? "touch" : undefined} expanded={choosing} onPress={() => setChoosing(true)} />
+        </View>
+      </View>
+      {data?.state === "ready" && data.limitedTo ? <Text style={caption}>{t("limited", { size: countFormat.format(data.limitedTo) })}</Text> : null}
+      <View style={{ flexShrink: 1, minHeight: 0, borderWidth: 1, borderRadius: toolbarRadius, borderColor: colors.border, overflow: "hidden" }}>
+        {!compact ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: tableGutter + 1,
+            paddingVertical: 10, backgroundColor: colors.surface1, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={[caption, { flex: 1.4 }]}>{t("supplier")}</Text>
+            <View style={{ flex: 3, flexDirection: "row", gap: 10 }}>
+              {comparisonMetrics.map((key) => <Text key={key} style={[caption, { flex: 1 }]}>{t(key)}</Text>)}
+            </View>
+            <View style={{ width: 16 }} />
+          </View>
+        ) : null}
+        <FlatList key={model.id} data={model.providers} keyExtractor={(item) => item.id} style={{ flexGrow: 0 }}
+          renderItem={({ item, index }) => <ProviderComparisonRow row={item} model={model.name} theme={theme} compact={compact}
+            last={index === model.providers.length - 1}
+            onPress={() => showRequests({ id: item.id, provider: item.name, model: model.name })} />} />
+      </View>
+      {choosing ? (
+        <Modal title={t("chooseModel")} open onOpenChange={setChoosing}>
+          <Modal.Content>
+            <FlatList data={models} keyExtractor={(item) => item.id} style={{ maxHeight: 340 }}
+              contentContainerStyle={{ gap: 6 }}
+              renderItem={({ item }) => <Control label={item.name} theme={theme} segment selected={model.id === item.id}
+                size="touch" onPress={() => { selectModel(item.id); setChoosing(false); }} />} />
+          </Modal.Content>
+        </Modal>
+      ) : null}
+    </View>
+  );
+}
+
 function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
   const { t, locale } = useTranslation(messages);
   const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }), [locale]);
   const readHistory = useRpc(getHistory);
-  const [period, setPeriod] = useState<HistoryInput["period"]>("today");
+  const readComparison = useRpc(getComparison);
+  const [view, setView] = useState<"requests" | "compare">("requests");
+  const [requestPeriod, setRequestPeriod] = useState<HistoryInput["period"]>("today");
+  const [comparisonPeriod, setComparisonPeriod] = useState<HistoryInput["period"]>("7d");
+  const [modelId, setModelId] = useState<string>();
+  const [route, setRoute] = useState<RouteFilter>();
   const [offset, setOffset] = useState(0);
   const [limit, setLimit] = useState<HistoryPageSize>(50);
   const [revision, setRevision] = useState(0);
+  const refreshRequested = useRef(false);
   const [paneWidth, setPaneWidth] = useState(0);
   const [menu, setMenu] = useState<"period" | "pages">();
   const sizeOpen = menu === "pages";
   const setSizeOpen = (open: boolean) => setMenu(open ? "pages" : undefined);
-  const key = `${period}:${offset}:${limit}:${revision}`;
-  const [result, setResult] = useState<{ key: string; period: HistoryInput["period"]; response: HistoryOutput }>();
+  const period = view === "compare" ? comparisonPeriod : requestPeriod;
+  const filterKey = `${requestPeriod}:${route?.id ?? ""}`;
+  const key = `${filterKey}:${offset}:${limit}:${revision}`;
+  const comparisonKey = `${comparisonPeriod}:${revision}`;
+  const [result, setResult] = useState<{ key: string; filterKey: string; response: HistoryOutput }>();
+  const [comparisonResult, setComparisonResult] = useState<{ key: string; response: ComparisonOutput }>();
   const response = result?.key === key ? result.response : undefined;
-  const refresh = () => { setOffset(0); setRevision((previous) => previous + 1); setMenu(undefined); };
+  const refresh = () => { refreshRequested.current = true; setOffset(0); setRevision((previous) => previous + 1); setMenu(undefined); };
   const go = (page: number) => { setOffset((page - 1) * limit); setMenu(undefined); };
   const changeSize = (size: HistoryPageSize) => { setLimit(size); setOffset(0); setMenu(undefined); };
-  const changePeriod = (value: HistoryInput["period"]) => { setPeriod(value); setOffset(0); setMenu(undefined); };
+  const changePeriod = (value: HistoryInput["period"]) => {
+    if (view === "compare") setComparisonPeriod(value);
+    else { setRequestPeriod(value); setOffset(0); }
+    setMenu(undefined);
+  };
+  const showRequests = (filter: RouteFilter) => {
+    setRoute(filter);
+    setRequestPeriod(comparisonPeriod);
+    setOffset(0);
+    setView("requests");
+  };
   const openSession = navigation ? (agentId: string) => navigation.openAgent({ agentId, serverId: host.id }) : undefined;
 
   useEffect(() => {
+    if (view !== "requests") return;
     let current = true;
+    const refresh = refreshRequested.current;
+    refreshRequested.current = false;
     const settle = (response: HistoryOutput) => {
       if (!current) return;
       if (response.state === "ready") {
         const lastOffset = Math.floor(Math.max(0, response.total - 1) / limit) * limit;
         if (offset > lastOffset) { setOffset(lastOffset); return; }
       }
-      setResult({ key, period, response });
+      setResult({ key, filterKey, response });
     };
-    void readHistory({ period, offset, limit }).then(settle, () => settle({ state: "unavailable" }));
+    void readHistory({ period: requestPeriod, offset, limit, route: route?.id, refresh })
+      .then(settle, () => settle({ state: "unavailable" }));
     return () => { current = false; };
-  }, [key, limit, offset, period, readHistory]);
+  }, [key, filterKey, limit, offset, requestPeriod, readHistory, route?.id, view]);
+
+  useEffect(() => {
+    if (view !== "compare") return;
+    let current = true;
+    const refresh = refreshRequested.current;
+    refreshRequested.current = false;
+    const settle = (response: ComparisonOutput) => {
+      if (current) setComparisonResult({ key: comparisonKey, response });
+    };
+    void readComparison({ period: comparisonPeriod, refresh }).then(settle, () => settle({ state: "unavailable" }));
+    return () => { current = false; };
+  }, [comparisonKey, comparisonPeriod, readComparison, view]);
 
   const page = response?.state === "ready" ? response : undefined;
-  const total = result?.period === period && result.response.state === "ready" ? result.response.total : 0;
+  const total = result?.filterKey === filterKey && result.response.state === "ready" ? result.response.total : 0;
   const colors = theme.colors;
   const compact = layout.compact || paneWidth < 820;
   const compactRows = layout.compact || paneWidth < 1050;
@@ -561,44 +747,66 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
     </View>
   );
   const reload = <Control label={t("reload")} theme={theme} icon="RefreshCw" onPress={refresh} variant="refresh" size={compact ? "compact" : undefined} />;
+  const viewLabel = t(view === "compare" ? "requests" : "compare");
+  const switchView = <Control label={viewLabel} display={viewLabel} icon={view === "compare" ? "List" : "ChartNoAxesColumn"} theme={theme}
+    variant="pageSize" size={compact ? "compact" : undefined} onPress={() => {
+      setView(view === "compare" ? "requests" : "compare"); setMenu(undefined);
+    }} />;
   return (
     <View onLayout={({ nativeEvent }) => setPaneWidth(nativeEvent.layout.width)}
       style={{ flex: 1, width: "100%", maxWidth: 1256, alignSelf: "center", backgroundColor: colors.surface0, paddingHorizontal: padding, paddingBottom: compact ? 0 : padding }}>
       {compact ? (
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: compactControlInset }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: compactControlInset }}>
+          {switchView}<View style={{ flex: 1 }} />
           <Control label={t("periodFilter", { period: t(period) })} display={t(period)} icon="ChevronDown"
             theme={theme} variant="pageSize" size="compact" expanded={menu === "period"} onPress={() => setMenu("period")} />
           {reload}
         </View>
       ) : (
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 7, paddingVertical: 6 }}>
-          {periods}{reload}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 6 }}>
+          {switchView}<View style={{ flex: 1 }} />{periods}{reload}
         </View>
       )}
-      <View style={{ flex: 1, minHeight: 0, borderWidth: compact ? 0 : 1, borderColor: colors.border, borderRadius: compact ? 0 : toolbarRadius }}>
-        {page ? (
-          <FlatList style={{ flex: 1 }} key={key} data={page.rows} contentContainerStyle={compact ? { paddingBottom: 8 } : undefined}
-            renderItem={({ item }) => <RequestRow row={item} theme={theme} compact={compactRows}
-              dateFormat={dateFormat} openSession={openSession} />}
-            keyExtractor={(item, index) => `${item.time}:${index}`}
-            ListHeaderComponent={!compactRows && page.rows.length > 0 ? <TableHeading theme={theme} /> : undefined}
-            stickyHeaderIndices={!compactRows && page.rows.length > 0 ? [0] : undefined}
-            ListEmptyComponent={<Text style={{ color: colors.foregroundMuted, padding: tableGutter }}>{t("empty")}</Text>} />
-        ) : (
-          <View style={{ flex: 1, alignItems: "center", paddingVertical: 28, gap: 8 }}>
-            {response && response.state !== "ready" ? (
-              <>
-                <Text style={{ color: colors.foregroundMuted }}>{t(response.state)}</Text>
-                <Control label={t("retry")} theme={theme} onPress={refresh} />
-              </>
-            ) : <ActivityIndicator color={colors.foregroundMuted} />}
+      {view === "compare" ? (
+        <PerformanceComparison theme={theme} compact={compact} selectedModel={modelId} selectModel={setModelId}
+          data={comparisonResult?.key === comparisonKey ? comparisonResult.response : undefined}
+          showRequests={showRequests} retry={refresh} />
+      ) : (
+        <>
+        {route ? (
+          <View style={{ alignSelf: "flex-start", maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 4,
+            paddingLeft: 10, marginBottom: 6, backgroundColor: colors.surface1, borderRadius: footerRadius }}>
+            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12, color: colors.foreground }}>{route.provider} / {route.model}</Text>
+            <Control label={t("clearRoute")} theme={theme} variant="pagination" size={compact ? "compact" : undefined}
+              icon="X" onPress={() => { setRoute(undefined); setOffset(0); }} />
           </View>
-        )}
-        {sizeOpen && !compact ? <Pressable accessible={false} tabIndex={-1} onPress={() => setSizeOpen(false)}
-          style={{ position: "absolute", inset: 0, zIndex: 1 }} /> : null}
-        {total > 0 ? <HistoryPagination total={total} offset={offset} limit={limit} theme={theme} compact={compact}
-          sizeOpen={sizeOpen} setSizeOpen={setSizeOpen} changeSize={changeSize} go={go} /> : null}
-      </View>
+        ) : null}
+        <View style={{ flex: 1, minHeight: 0, borderWidth: compact ? 0 : 1, borderColor: colors.border, borderRadius: compact ? 0 : toolbarRadius }}>
+          {page ? (
+            <FlatList style={{ flex: 1 }} key={key} data={page.rows} contentContainerStyle={compact ? { paddingBottom: 8 } : undefined}
+              renderItem={({ item }) => <RequestRow row={item} theme={theme} compact={compactRows}
+                dateFormat={dateFormat} openSession={openSession} />}
+              keyExtractor={(item, index) => `${item.time}:${index}`}
+              ListHeaderComponent={!compactRows && page.rows.length > 0 ? <TableHeading theme={theme} /> : undefined}
+              stickyHeaderIndices={!compactRows && page.rows.length > 0 ? [0] : undefined}
+              ListEmptyComponent={<Text style={{ color: colors.foregroundMuted, padding: tableGutter }}>{t("empty")}</Text>} />
+          ) : (
+            <View style={{ flex: 1, alignItems: "center", paddingVertical: 28, gap: 8 }}>
+              {response && response.state !== "ready" ? (
+                <>
+                  <Text style={{ color: colors.foregroundMuted }}>{t(response.state)}</Text>
+                  <Control label={t("retry")} theme={theme} onPress={refresh} />
+                </>
+              ) : <ActivityIndicator color={colors.foregroundMuted} />}
+            </View>
+          )}
+          {sizeOpen && !compact ? <Pressable accessible={false} tabIndex={-1} onPress={() => setSizeOpen(false)}
+            style={{ position: "absolute", inset: 0, zIndex: 1 }} /> : null}
+          {total > 0 ? <HistoryPagination total={total} offset={offset} limit={limit} theme={theme} compact={compact}
+            sizeOpen={sizeOpen} setSizeOpen={setSizeOpen} changeSize={changeSize} go={go} /> : null}
+        </View>
+        </>
+      )}
       {compact && menu === "period" ? (
         <Modal title={t("choosePeriod")} open
           onOpenChange={(open) => { if (!open) setMenu(undefined); }}>

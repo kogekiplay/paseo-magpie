@@ -8,8 +8,9 @@ const count = z.number().int().nonnegative().safe();
 const optionalCount = count.optional().catch(undefined);
 const optionalText = z.string().optional().catch(undefined);
 const optionalCharge = z.number().nonnegative().optional().catch(undefined);
+export const gatewayHistoryPageSize = 500;
 const usagePage = z.object({
-  rows: z.array(z.unknown()).max(Math.max(...historyPageSizes)),
+  rows: z.array(z.unknown()).max(gatewayHistoryPageSize),
   offset: count, total: count,
   accounts: z.array(z.object({ id: z.string(), name: optionalText })).optional().catch(undefined),
 });
@@ -30,6 +31,7 @@ const usageRow = z.object({
   status: z.number().int().min(0).max(599).optional(),
   err: z.string().optional(),
   canceled: z.boolean().optional(),
+  handed_on: z.boolean().optional(),
   ms: count.optional(),
   ttft_ms: count.optional(),
   first_text_ms: count.optional(),
@@ -50,6 +52,8 @@ const usageRow = z.object({
 });
 
 type UsageRow = z.infer<typeof usageRow>;
+type UsagePage = z.infer<typeof usagePage>;
+export type HistoryRecord = { row: HistoryRow; sessionKey?: string };
 type HistorySession = NonNullable<HistoryRow["session"]>;
 type SessionIdentity = { provider: string; sessionId: string | null };
 type SessionDirectory = (options: {
@@ -146,8 +150,8 @@ function requestSessionKey(row: UsageRow) {
   return row.agent && id ? sessionKey(row.agent, id) : undefined;
 }
 
-async function findHistorySessions(list: SessionDirectory, rows: UsageRow[], secret?: string) {
-  const wanted = new Set(rows.map(requestSessionKey));
+async function findHistorySessions(list: SessionDirectory, rows: HistoryRecord[], secret?: string) {
+  const wanted = new Set(rows.map((request) => request.sessionKey));
   const sessions = new Map<string, HistorySession | undefined>();
   wanted.delete(undefined);
   if (!wanted.size) return sessions;
@@ -182,33 +186,41 @@ async function findHistorySessions(list: SessionDirectory, rows: UsageRow[], sec
   return sessions;
 }
 
-export async function projectHistory(body: unknown, secret?: string, list?: SessionDirectory): Promise<HistoryOutput> {
-  const page = usagePage.safeParse(body);
-  if (!page.success) return { state: "unavailable" };
-  const { offset, total, accounts } = page.data;
-  const accountNames = new Map(accounts?.map(({ id, name }) => [id, name]));
-  const requests = page.data.rows.flatMap((value): UsageRow[] => {
-    const decoded = usageRow.safeParse(value);
-    if (!decoded.success) return [];
-    // Keep this guard even when an older gateway ignores a query filter.
-    return !decoded.data.source ? [decoded.data] : [];
-  });
+export async function historyRows(records: HistoryRecord[], secret?: string, list?: SessionDirectory): Promise<HistoryRow[]> {
   // An unavailable Paseo directory must not hide valid performance data.
-  const sessions = list ? await findHistorySessions(list, requests, secret).catch(() => undefined) : undefined;
-  const rows = requests.flatMap((row): HistoryRow[] => {
-    const time = Date.parse(row.t);
-    if (!Number.isSafeInteger(time) || time <= 0) return [];
-    const outcome = row.canceled ? "canceled" : row.err || (row.status ?? 0) >= 400 ? "failed" : "completed";
-    const speed = outcome === "completed" ? measureSpeed(row) : undefined;
-    const key = requestSessionKey(row);
-    const session = key ? sessions?.get(key) : undefined;
-    const agentLabel = safeLabel(row.agentName, secret)
-      || (row.agent === "codex" ? "Codex" : row.agent === "claude" ? "Claude Code" : safeLabel(row.agent, secret));
-    const account = displayAccount(row, accountNames, secret);
-    const protocol = displayProtocol(row);
-    const cacheHit = cacheHitOf(row);
-    const requestedModel = safeLabel(row.req, secret);
-    return [{
+  const sessions = list ? await findHistorySessions(list, records, secret).catch(() => undefined) : undefined;
+  return records.map(({ row, sessionKey }) => {
+    const session = sessionKey ? sessions?.get(sessionKey) : undefined;
+    return session ? { ...row, session } : row;
+  });
+}
+
+export function gatewayRequests(values: unknown[]) {
+  return values.flatMap((value): UsageRow[] => {
+    const decoded = usageRow.safeParse(value);
+    // Keep this guard even when an older gateway ignores a query filter.
+    return decoded.success && !decoded.data.source ? [decoded.data] : [];
+  });
+}
+
+export function historyAccountNames(accounts: UsagePage["accounts"]) {
+  return new Map(accounts?.map(({ id, name }) => [id, name]));
+}
+
+export function projectHistoryRequest(row: UsageRow, accountNames: ReadonlyMap<string, string | undefined>, secret?: string): HistoryRecord | undefined {
+  const time = Date.parse(row.t);
+  if (!Number.isSafeInteger(time) || time <= 0) return;
+  const outcome = row.canceled ? "canceled" : row.err || (row.status ?? 0) >= 400 ? "failed" : "completed";
+  const speed = outcome === "completed" ? measureSpeed(row) : undefined;
+  const agentLabel = safeLabel(row.agentName, secret)
+    || (row.agent === "codex" ? "Codex" : row.agent === "claude" ? "Claude Code" : safeLabel(row.agent, secret));
+  const account = displayAccount(row, accountNames, secret);
+  const protocol = displayProtocol(row);
+  const cacheHit = cacheHitOf(row);
+  const requestedModel = safeLabel(row.req, secret);
+  return {
+    sessionKey: requestSessionKey(row),
+    row: {
       time,
       agent: agentLabel,
       provider: safeLabel(row.providerName || row.provider, secret),
@@ -227,34 +239,55 @@ export async function projectHistory(body: unknown, secret?: string, list?: Sess
       ...(row.ttft_ms ? { ttftMs: row.ttft_ms } : {}),
       ...(row.ms ? { durationMs: row.ms } : {}),
       ...(speed ? { speed } : {}),
-      ...(session ? { session } : {}),
-    }];
-  });
-  return { state: "ready", rows, offset, total };
+    },
+  };
+}
+
+export async function projectHistory(body: unknown, secret?: string, list?: SessionDirectory): Promise<HistoryOutput> {
+  const parsed = usagePage.safeParse(body);
+  if (!parsed.success || parsed.data.rows.length > Math.max(...historyPageSizes)) return { state: "unavailable" };
+  const { rows, offset, total, accounts } = parsed.data;
+  const names = historyAccountNames(accounts);
+  const records = gatewayRequests(rows).flatMap((row) => projectHistoryRequest(row, names, secret) ?? []);
+  return { state: "ready", rows: await historyRows(records, secret, list), offset, total };
+}
+
+type GatewayPage = ({ state: "ready" } & UsagePage) | Exclude<HistoryOutput, { state: "ready" }>;
+
+export async function readGatewayHistoryPage(
+  config: MagpieConfig, period: HistoryInput["period"], offset: number, limit: number,
+  request: typeof fetch,
+): Promise<GatewayPage> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+  try {
+    const url = new URL("v1/magpie/usage/requests", config.url);
+    url.search = new URLSearchParams({ period, via: "through", offset: String(offset), limit: String(limit) }).toString();
+    const response = await request(url, {
+      headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
+      redirect: "error",
+      signal: controller.signal,
+    });
+    if (response.status === 401 || response.status === 403) return { state: "forbidden" };
+    if (response.status === 404 || response.status === 405) return { state: "unsupported" };
+    if (!response.ok) return { state: "unavailable" };
+    const page = usagePage.safeParse(await response.json());
+    return page.success ? { state: "ready", ...page.data } : { state: "unavailable" };
+  } catch {
+    return { state: "unavailable" };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function createHistoryReader(loadConfig: () => Promise<MagpieConfig> = readConfig, request: typeof fetch = fetch) {
   return async ({ period, offset, limit = historyPageSizes[0] }: HistoryInput, list?: SessionDirectory): Promise<HistoryOutput> => {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const config = await loadConfig();
-      const url = new URL("v1/magpie/usage/requests", config.url);
-      url.search = new URLSearchParams({ period, via: "through", offset: String(offset), limit: String(limit) }).toString();
-      timer = setTimeout(() => controller.abort(), config.timeoutMs);
-      const response = await request(url, {
-        headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
-        redirect: "error",
-        signal: controller.signal,
-      });
-      if (response.status === 401 || response.status === 403) return { state: "forbidden" };
-      if (response.status === 404 || response.status === 405) return { state: "unsupported" };
-      if (!response.ok) return { state: "unavailable" };
-      return projectHistory(await response.json(), config.apiKey, list);
+      const page = await readGatewayHistoryPage(config, period, offset, limit, request);
+      return page.state === "ready" ? projectHistory(page, config.apiKey, list) : page;
     } catch {
       return { state: "unavailable" };
-    } finally {
-      clearTimeout(timer);
     }
   };
 }
