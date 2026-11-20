@@ -57,7 +57,7 @@ Codex 和 Claude Code 会话的输入框附近按顺序显示 Magpie 最近一�
 
 在 Paseo 侧栏打开「Magpie 用量」，可分别查看 Codex 和 Claude Code 的网关请求，按今天、近 7 天或近 30 天翻页。每条记录显示实际供应商和模型、首字延迟、总耗时、TPS 及 HTTP 状态。`≥` 是 Magpie 口径下的速度下界，`—` 表示数据不足。
 
-历史页直接读取已配置网关的 `/v1/magpie/usage/requests`，能显示 Magpie 已保留的旧记录。Paseo 客户端仅接收展示字段。
+历史页直接读取已配置网关的 `/v1/magpie/usage/requests`，能显示 Magpie 已保留的旧记录。精确关联到当前主机的请求会显示 Paseo 里的会话名称，点击可打开对应会话。刷新后会显示最新的名称。Paseo 客户端仅接收展示和导航所需的字段。
 
 ### 回复的实际路由
 

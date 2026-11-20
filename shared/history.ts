@@ -3,12 +3,13 @@ import { z } from "zod";
 
 export const historyPeriods = ["today", "7d", "30d"] as const;
 export const historyAgents = ["codex", "claude"] as const;
-export const historyPageSize = 30;
+export const historyPageSizes = [30, 50, 100] as const;
 
 export const historyInput = z.object({
   period: z.enum(historyPeriods),
   agent: z.enum(historyAgents),
   offset: z.number().int().nonnegative().safe(),
+  limit: z.literal(historyPageSizes).optional(),
 }).strict();
 
 const historyRow = z.object({
@@ -20,12 +21,13 @@ const historyRow = z.object({
   ttftMs: z.number().positive().optional(),
   durationMs: z.number().positive().optional(),
   speed: z.object({ tps: z.number().positive(), lowerBound: z.boolean() }).optional(),
+  session: z.object({ agentId: z.string().min(1), title: z.string() }).optional(),
 });
 
 export const historyOutput = z.discriminatedUnion("state", [
   z.object({
     state: z.literal("ready"),
-    rows: z.array(historyRow).max(historyPageSize),
+    rows: z.array(historyRow).max(Math.max(...historyPageSizes)),
     offset: z.number().int().nonnegative().safe(),
     total: z.number().int().nonnegative().safe(),
   }),
@@ -37,3 +39,4 @@ export const getHistory = defineRpc({ name: "history.list", input: historyInput,
 export type HistoryInput = z.infer<typeof historyInput>;
 export type HistoryOutput = z.infer<typeof historyOutput>;
 export type HistoryRow = z.infer<typeof historyRow>;
+export type HistoryPageSize = (typeof historyPageSizes)[number];

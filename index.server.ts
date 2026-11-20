@@ -9,6 +9,7 @@ import { createHistoryReader } from "./server/history.ts";
 export default function contribute(server: PluginServerContext) {
   server.registerUsageSource(createMagpieUsageSource());
   server.handle(watchRoute, handleRouteWatch);
-  server.handle(getHistory, createHistoryReader());
+  const readHistory = createHistoryReader();
+  server.handle(getHistory, (input, { paseo }) => readHistory(input, (options) => paseo.agents.list(options)));
   return server.addHook("agent.turn.after", recordReplyRoute);
 }
