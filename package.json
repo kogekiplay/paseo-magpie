@@ -1,6 +1,6 @@
 {
   "name": "paseo-magpie",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Track Magpie quotas, inspect actual routes, and compare provider latency and TPS trends in Paseo.",
   "type": "module",
   "license": "MIT",

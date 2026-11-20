@@ -8,6 +8,7 @@ const messages = defineTranslations({ resources: {
   en: {
     title: "Performance trend", p90: "First token P90", tpsP50: "Median TPS", seconds: "s", tokens: "tok/s",
     provider: "Provider", choose: "Choose provider", loading: "Loading trend…", unavailable: "Could not load the trend.",
+    all: "All", allProviders: "All providers",
     empty: "No samples for this metric.", samples: "{{count}} samples", requests: "{{count}} requests",
     explore: "View samples for {{time}}", open: "View {{provider}} requests for {{time}}",
     highlight: "Highlight {{provider}}", single: "1 interval", noSamples: "No samples",
@@ -15,6 +16,7 @@ const messages = defineTranslations({ resources: {
   "zh-CN": {
     title: "性能趋势", p90: "首字 P90", tpsP50: "TPS 中位数", seconds: "秒", tokens: "token/秒",
     provider: "供应商", choose: "选择供应商", loading: "正在读取趋势…", unavailable: "无法读取性能趋势。",
+    all: "全部", allProviders: "全部供应商",
     empty: "当前指标没有样本。", samples: "{{count}} 个样本", requests: "{{count}} 条请求",
     explore: "查看 {{time}} 的样本", open: "查看 {{provider}} 在 {{time}} 的请求",
     highlight: "突出显示 {{provider}}", single: "1 个时段", noSamples: "无样本",
@@ -179,9 +181,8 @@ export function PerformanceTrend({ theme, compact, model, period, providerColors
     sampleBuckets: points.filter((point) => point[metric]).length,
     points: new Map(points.map((point) => [point.start, point])),
   })), [ready, providerColors, colors.accent, metric]);
-  const active = providers.find(({ id }) => id === providerId)
-    ?? providers.find(({ sampleBuckets }) => sampleBuckets) ?? providers[0];
-  const visible = compact && active ? [active] : providers;
+  const active = compact ? providers.find(({ id }) => id === providerId) : undefined;
+  const visible = active ? [active] : providers;
   const hourly = period === "today";
   const timeZone = ready?.timeZone;
   const day = useMemo(() => new Intl.DateTimeFormat(locale, { timeZone, month: "short", day: "numeric" }), [locale, timeZone]);
@@ -192,6 +193,25 @@ export function PerformanceTrend({ theme, compact, model, period, providerColors
   const caption = { color: colors.foregroundMuted, fontSize: 12 };
   const dot = (provider: Provider) => <View aria-hidden style={{ width: 8, height: 8, borderRadius: 4,
     borderWidth: 1.5, borderColor: provider.color, backgroundColor: provider.sampleBuckets === 1 ? "transparent" : provider.color }} />;
+  const chooseProvider = (id?: string) => {
+    setProviderId(id);
+    setSelected(undefined);
+    setChoosing(false);
+  };
+  const renderChoice = (provider?: Provider) => {
+    const name = provider?.name ?? t("allProviders");
+    const checked = provider?.id === active?.id;
+    return (
+      <Pressable accessibilityRole="button" accessibilityLabel={name} accessibilityState={{ selected: checked }}
+        onPress={() => chooseProvider(provider?.id)}
+        style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", gap: 8,
+          borderRadius: 6, backgroundColor: pressed || checked ? colors.surface2 : "transparent" })}>
+        {provider ? dot(provider) : <Icon icon="Layers" size={14} color={colors.foregroundMuted} />}
+        <Text style={{ flex: 1, color: provider?.color ?? colors.foreground }}>{name}</Text>
+        {checked ? <Icon icon="Check" size={16} color={colors.accent} /> : null}
+      </Pressable>
+    );
+  };
   return (
     <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border, padding: compact ? 11 : 14, gap: 10 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
@@ -207,13 +227,16 @@ export function PerformanceTrend({ theme, compact, model, period, providerColors
           </Pressable>)}
         </View>
       </View>
-      {compact && active && providers.length > 1 ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={t("choose")} aria-expanded={choosing} onPress={() => setChoosing(true)}
+      {compact && providers.length > 1 ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={t("choose")}
+          accessibilityValue={{ text: active?.name ?? t("allProviders") }} aria-expanded={choosing} onPress={() => setChoosing(true)}
           style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 8,
             minHeight: 36, borderRadius: 7, backgroundColor: pressed || choosing ? colors.surface2 : colors.surface1 })}>
-          <Text style={[caption, { flex: 1 }]}>{t("provider")}</Text>{dot(active)}
-          <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12, fontWeight: "600", color: active.color }}>{active.name}</Text>
-          {active.sampleBuckets <= 1 ? <Text style={caption}>{t(active.sampleBuckets ? "single" : "noSamples")}</Text> : null}
+          <Text style={[caption, { flex: 1 }]}>{t("provider")}</Text>{active ? dot(active) : null}
+          <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12, fontWeight: "600", color: active?.color ?? colors.foreground }}>
+            {active?.name ?? t("all")}
+          </Text>
+          {active && active.sampleBuckets <= 1 ? <Text style={caption}>{t(active.sampleBuckets ? "single" : "noSamples")}</Text> : null}
           <Icon icon="ChevronDown" size={13} color={colors.foregroundMuted} />
         </Pressable>
       ) : null}
@@ -225,19 +248,19 @@ export function PerformanceTrend({ theme, compact, model, period, providerColors
           {!data ? <ActivityIndicator color={colors.foregroundMuted} /> : null}
           <Text accessibilityLiveRegion="polite" style={caption}>{t(data ? "unavailable" : "loading")}</Text>
         </View>}
-      {(!compact || providers.length === 1) && visible.length > 0 ? (
+      {!active && visible.length > 0 ? (
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
           {visible.map((provider) => {
             const isSpotlit = spotlight === provider.id && provider.sampleBuckets > 0;
             const legend = (
               <>
                 {dot(provider)}
-                <Text style={{ ...caption, color: provider.color, fontWeight: "600" }}>{provider.name}</Text>
+                <Text numberOfLines={1} style={{ ...caption, color: provider.color, fontWeight: "600", flexShrink: 1 }}>{provider.name}</Text>
                 {provider.sampleBuckets <= 1 ? <Text style={caption}>{t(provider.sampleBuckets ? "single" : "noSamples")}</Text> : null}
               </>
             );
             const style = { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 26,
-              paddingHorizontal: 7, borderRadius: 6 } as const;
+              paddingHorizontal: 7, borderRadius: 6, maxWidth: "100%" } as const;
             return compact || !provider.sampleBuckets ? <View key={provider.id} style={style}>{legend}</View>
               : <Pressable key={provider.id} accessibilityRole="button" accessibilityLabel={t("highlight", { provider: provider.name })}
                 aria-pressed={isSpotlit} onPress={() => setSpotlight(isSpotlit ? undefined : provider.id)}
@@ -275,13 +298,7 @@ export function PerformanceTrend({ theme, compact, model, period, providerColors
       {choosing ? <Modal title={t("choose")} open onOpenChange={setChoosing}>
         <Modal.Content>
           <FlatList data={providers} keyExtractor={(provider) => provider.id} style={{ maxHeight: 340 }}
-            renderItem={({ item }) => <Pressable accessibilityRole="button" accessibilityLabel={item.name} accessibilityState={{ selected: item.id === active?.id }}
-              onPress={() => { setProviderId(item.id); setSelected(undefined); setChoosing(false); }}
-              style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", gap: 8,
-                borderRadius: 6, backgroundColor: pressed || item.id === active?.id ? colors.surface2 : "transparent" })}>
-              {dot(item)}<Text style={{ flex: 1, color: item.color }}>{item.name}</Text>
-              {item.id === active?.id ? <Icon icon="Check" size={16} color={colors.accent} /> : null}
-            </Pressable>} />
+            ListHeaderComponent={renderChoice()} renderItem={({ item }) => renderChoice(item)} />
         </Modal.Content>
       </Modal> : null}
     </View>
