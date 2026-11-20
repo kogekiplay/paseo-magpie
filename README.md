@@ -6,13 +6,13 @@
 
 <p align="center">Magpie 额度、实际路由、请求历史与供应商性能对比。</p>
 
-在 [Paseo](https://paseo.sh) 原生额度入口查看 [Magpie](https://github.com/yetone/magpie) 的账号用量，在会话里查看实际路由。侧栏的「Magpie 用量」提供请求明细，并按实际模型对比各供应商的首字延迟和 TPS。
+在 [Paseo](https://paseo.sh) 原生额度入口查看 [Magpie](https://github.com/yetone/magpie) 的账号用量，在会话里查看实际路由。侧栏的「Magpie 用量」提供请求明细和各供应商的首字延迟、TPS 趋势。
 
-![Magpie 性能对比，Paseo 界面与示例数据](assets/preview.png)
+![Magpie 供应商性能趋势，Paseo 界面与示例数据](assets/preview.png)
 
 图标使用 [Magpie 官方图形](https://github.com/yetone/magpie/tree/main/internal/gui/assets/icons)，原始许可见 [assets/MAGPIE-LICENSE](assets/MAGPIE-LICENSE)。
 
-Track account quotas, inspect actual routes, and compare provider performance by served model in Paseo.
+Track account quotas, inspect actual routes, and compare provider latency and speed trends by served model in Paseo.
 
 ## 安装
 
@@ -62,6 +62,8 @@ Codex 和 Claude Code 会话的输入框附近按顺序显示 Magpie 最近一�
 历史页直接读取已配置网关的 `/v1/magpie/usage/requests`，能显示 Magpie 已保留的旧记录。精确关联到当前主机的请求会显示 Paseo 里的会话名称，点击可打开对应会话。刷新后会显示最新的名称。Paseo 客户端仅接收展示和导航所需的字段。
 
 点「性能对比」可按实际模型比较各供应商，默认查看近 7 天。每家显示请求数、首字延迟 P50 和 P90、TPS 中位数及有效样本数。耗时和速度使用已完成的请求，TPS 只统计有实测速率的记录。点供应商可查看同一批请求，并从明细返回来源会话。统计使用所选日期范围内最近最多 50,000 条网关记录。
+
+「性能趋势」默认显示首字 P90，可切换到 TPS 中位数。今天按小时统计，近 7 天和近 30 天按天统计，图表采用 Paseo 守护进程的时区。桌面可同时比较各供应商，手机可切换单个供应商。点选时段可查看有效样本数和请求明细，缺样本的时段在曲线上留空。
 
 ### 回复的实际路由
 

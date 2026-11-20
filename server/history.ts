@@ -252,7 +252,7 @@ export async function projectHistory(body: unknown, secret?: string, list?: Sess
   return { state: "ready", rows: await historyRows(records, secret, list), offset, total };
 }
 
-type GatewayPage = ({ state: "ready" } & UsagePage) | Exclude<HistoryOutput, { state: "ready" }>;
+type GatewayPage = ({ state: "ready" } & UsagePage) | Exclude<HistoryOutput, { state: "ready" | "expired" }>;
 
 export async function readGatewayHistoryPage(
   config: MagpieConfig, period: HistoryInput["period"], offset: number, limit: number,

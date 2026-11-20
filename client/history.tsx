@@ -12,6 +12,7 @@ import {
   type ComparisonOutput, type ComparisonProvider, type HistoryInput, type HistoryOutput, type HistoryPageSize, type HistoryRow,
 } from "../shared/history.ts";
 import { magpieIcon } from "../shared/icon.ts";
+import { PerformanceTrend, type TrendSelection } from "./history-trend.tsx";
 
 const messages = defineTranslations({
   resources: {
@@ -29,6 +30,8 @@ const messages = defineTranslations({
       forbidden: "The configured Magpie gateway did not grant access to request history.",
       unsupported: "This Magpie gateway does not expose request history.",
       unavailable: "Could not load Magpie request history.",
+      expired: "The comparison has changed. Refresh the trend and select the interval again.",
+      refreshTrend: "Refresh trend",
       failed: "Failed", canceled: "Canceled",
       total: "{{total}} requests", pageSize: "Per page", pageSizeValue: "{{size}} per page",
       page: "Page {{page}}", currentPage: "Current page {{page}}",
@@ -62,6 +65,8 @@ const messages = defineTranslations({
       forbidden: "当前 Magpie 网关未授予读取请求历史的权限。",
       unsupported: "当前 Magpie 网关没有提供请求历史接口。",
       unavailable: "无法读取 Magpie 请求历史。",
+      expired: "对比数据已更新，刷新趋势后可重新选择时段。",
+      refreshTrend: "刷新趋势",
       failed: "失败", canceled: "已取消",
       total: "共 {{total}} 条", pageSize: "每页", pageSizeValue: "每页 {{size}} 条",
       page: "第 {{page}} 页", currentPage: "当前第 {{page}} 页",
@@ -586,7 +591,8 @@ function ProviderComparisonRow({ row, model, theme, compact, last, onPress }: {
   );
 }
 
-type RouteFilter = { id: string; provider: string; model: string };
+type RouteFilter = { id: string; provider: string; model: string }
+  & Partial<Pick<TrendSelection, "bucket" | "timeLabel" | "snapshot">>;
 
 function CompactModelPicker({ model, theme, expanded, onPress }: {
   model: string; theme: Theme; expanded: boolean; onPress: () => void;
@@ -622,8 +628,9 @@ function CompactModelPicker({ model, theme, expanded, onPress }: {
   );
 }
 
-function PerformanceComparison({ theme, compact, data, selectedModel, selectModel, showRequests, retry }: {
+function PerformanceComparison({ theme, compact, data, period, selectedModel, selectModel, showRequests, retry }: {
   theme: Theme; compact: boolean; data: ComparisonOutput | undefined; selectedModel: string | undefined;
+  period: HistoryInput["period"];
   selectModel: (id: string) => void; showRequests: (route: RouteFilter) => void; retry: () => void;
 }) {
   const { t } = useTranslation(messages);
@@ -664,19 +671,22 @@ function PerformanceComparison({ theme, compact, data, selectedModel, selectMode
       ) : null}
       {data?.state === "ready" && data.limitedTo ? <Text style={caption}>{t("limited", { size: countFormat.format(data.limitedTo) })}</Text> : null}
       <View style={{ flexShrink: 1, minHeight: 0, borderWidth: 1, borderRadius: toolbarRadius, borderColor: colors.border, overflow: "hidden" }}>
-        {compact ? (
-          <CompactModelPicker model={model.name} theme={theme} expanded={choosing} onPress={() => setChoosing(true)} />
-        ) : (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: tableGutter + 1,
-            paddingVertical: 10, backgroundColor: colors.surface1, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={[caption, { flex: 1.4 }]}>{t("supplier")}</Text>
-            <View style={{ flex: 3, flexDirection: "row", gap: 10 }}>
-              {comparisonMetrics.map((key) => <Text key={key} style={[caption, { flex: 1 }]}>{t(key)}</Text>)}
-            </View>
-            <View style={{ width: 16 }} />
-          </View>
-        )}
-        <FlatList key={model.id} data={model.providers} keyExtractor={(item) => item.id} style={{ flexGrow: 0 }}
+        <FlatList key={`${period}:${model.id}`} data={model.providers} keyExtractor={(item) => item.id} style={{ flexGrow: 0 }}
+          ListHeaderComponent={<>
+            {compact ? <CompactModelPicker model={model.name} theme={theme} expanded={choosing} onPress={() => setChoosing(true)} /> : null}
+            <PerformanceTrend theme={theme} compact={compact} model={model.id} period={period}
+              showRequests={(selection) => showRequests({ ...selection, model: model.name })} />
+            {!compact ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: tableGutter + 1,
+                paddingVertical: 10, backgroundColor: colors.surface1, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                <Text style={[caption, { flex: 1.4 }]}>{t("supplier")}</Text>
+                <View style={{ flex: 3, flexDirection: "row", gap: 10 }}>
+                  {comparisonMetrics.map((key) => <Text key={key} style={[caption, { flex: 1 }]}>{t(key)}</Text>)}
+                </View>
+                <View style={{ width: 16 }} />
+              </View>
+            ) : null}
+          </>}
           renderItem={({ item, index }) => <ProviderComparisonRow row={item} model={model.name} theme={theme} compact={compact}
             last={index === model.providers.length - 1}
             onPress={() => showRequests({ id: item.id, provider: item.name, model: model.name })} />} />
@@ -714,7 +724,7 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
   const sizeOpen = menu === "pages";
   const setSizeOpen = (open: boolean) => setMenu(open ? "pages" : undefined);
   const period = view === "compare" ? comparisonPeriod : requestPeriod;
-  const filterKey = `${requestPeriod}:${route?.id ?? ""}`;
+  const filterKey = `${requestPeriod}:${route?.id ?? ""}:${route?.bucket ?? ""}:${route?.snapshot ?? ""}`;
   const key = `${filterKey}:${offset}:${limit}:${revision}`;
   const comparisonKey = `${comparisonPeriod}:${revision}`;
   const [result, setResult] = useState<{ key: string; filterKey: string; response: HistoryOutput }>();
@@ -725,7 +735,12 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
   const changeSize = (size: HistoryPageSize) => { setLimit(size); setOffset(0); setMenu(undefined); };
   const changePeriod = (value: HistoryInput["period"]) => {
     if (view === "compare") setComparisonPeriod(value);
-    else { setRequestPeriod(value); setOffset(0); }
+    else {
+      if (value !== requestPeriod && route?.bucket !== undefined) {
+        setRoute({ id: route.id, provider: route.provider, model: route.model });
+      }
+      setRequestPeriod(value); setOffset(0);
+    }
     setMenu(undefined);
   };
   const showRequests = (filter: RouteFilter) => {
@@ -749,10 +764,10 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
       }
       setResult({ key, filterKey, response });
     };
-    void readHistory({ period: requestPeriod, offset, limit, route: route?.id, refresh })
+    void readHistory({ period: requestPeriod, offset, limit, route: route?.id, bucket: route?.bucket, snapshot: route?.snapshot, refresh })
       .then(settle, () => settle({ state: "unavailable" }));
     return () => { current = false; };
-  }, [key, filterKey, limit, offset, requestPeriod, readHistory, route?.id, view]);
+  }, [key, filterKey, limit, offset, requestPeriod, readHistory, route?.id, route?.bucket, route?.snapshot, view]);
 
   useEffect(() => {
     if (view !== "compare") return;
@@ -812,7 +827,7 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
         </View>
       )}
       {view === "compare" ? (
-        <PerformanceComparison theme={theme} compact={compact} selectedModel={modelId} selectModel={setModelId}
+        <PerformanceComparison theme={theme} compact={compact} period={comparisonPeriod} selectedModel={modelId} selectModel={setModelId}
           data={comparisonResult?.key === comparisonKey ? comparisonResult.response : undefined}
           showRequests={showRequests} retry={refresh} />
       ) : (
@@ -820,7 +835,10 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
         {route ? (
           <View style={{ alignSelf: "flex-start", maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 4,
             paddingLeft: 10, marginBottom: 6, backgroundColor: colors.surface1, borderRadius: footerRadius }}>
-            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12, color: colors.foreground }}>{route.provider} / {route.model}</Text>
+            <View style={{ flexShrink: 1, gap: 1, paddingVertical: 4 }}>
+              {route.timeLabel ? <Text style={[numeric, { color: colors.foregroundMuted, fontSize: 11 }]}>{route.timeLabel}</Text> : null}
+              <Text numberOfLines={1} style={{ fontSize: 12, color: colors.foreground }}>{route.provider} / {route.model}</Text>
+            </View>
             <Control label={t("clearRoute")} theme={theme} variant="pagination" size={compact ? "compact" : undefined}
               icon="X" onPress={() => { setRoute(undefined); setOffset(0); }} />
           </View>
@@ -838,8 +856,12 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
             <View style={{ flex: 1, alignItems: "center", paddingVertical: 28, gap: 8 }}>
               {response && response.state !== "ready" ? (
                 <>
-                  <Text style={{ color: colors.foregroundMuted }}>{t(response.state)}</Text>
-                  <Control label={t("retry")} theme={theme} onPress={refresh} />
+                  <Text style={{ color: colors.foregroundMuted, textAlign: "center" }}>{t(response.state)}</Text>
+                  {response.state === "expired"
+                    ? <Control label={t("refreshTrend")} theme={theme} onPress={() => {
+                      setComparisonPeriod(requestPeriod); setRoute(undefined); setView("compare"); refresh();
+                    }} />
+                    : <Control label={t("retry")} theme={theme} onPress={refresh} />}
                 </>
               ) : <ActivityIndicator color={colors.foregroundMuted} />}
             </View>

@@ -6,11 +6,11 @@
     "assets/preview.png",
     "assets/request-history.png"
   ],
-  "description": "Track Magpie quotas, inspect actual routes, and compare provider performance by model.",
+  "description": "Track Magpie quotas, inspect actual routes, and compare provider latency and TPS trends.",
   "translations": {
     "zh-CN": {
       "name": "Magpie",
-      "description": "查看 Magpie 账号额度和实际路由，按模型对比供应商的首字延迟与生成速度。"
+      "description": "查看 Magpie 账号额度和实际路由，按模型比较供应商的首字延迟和 TPS 趋势。"
     }
   },
   "requirements": {

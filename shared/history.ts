@@ -7,6 +7,7 @@ export const historyProtocols = ["Anthropic", "Responses", "Chat", "Gemini"] as 
 export const historyAccessTypes = ["subscription", "api"] as const;
 
 const comparisonId = z.string().regex(/^[a-f0-9]{64}$/);
+const timestamp = z.number().int().positive().safe();
 const historyError = z.object({ state: z.enum(["forbidden", "unsupported", "unavailable"]) });
 
 export const historyInput = z.object({
@@ -14,6 +15,8 @@ export const historyInput = z.object({
   offset: z.number().int().nonnegative().safe(),
   limit: z.literal(historyPageSizes).optional(),
   route: comparisonId.optional(),
+  bucket: timestamp.optional(),
+  snapshot: comparisonId.optional(),
   refresh: z.boolean().optional(),
 }).strict();
 
@@ -51,6 +54,7 @@ export const historyOutput = z.discriminatedUnion("state", [
     total: z.number().int().nonnegative().safe(),
   }),
   historyError,
+  z.object({ state: z.literal("expired") }),
 ]);
 
 const comparisonInput = z.object({
@@ -75,8 +79,28 @@ const comparisonOutput = z.discriminatedUnion("state", [
   historyError,
 ]);
 
+const trendInput = z.object({ period: z.enum(historyPeriods), model: comparisonId }).strict();
+const measurement = z.object({ value: z.number().positive(), count: z.number().int().positive() });
+const trendPoint = z.object({
+  start: timestamp,
+  requests: z.number().int().positive(),
+  p90: measurement.optional(),
+  tpsP50: measurement.optional(),
+});
+const trendOutput = z.discriminatedUnion("state", [
+  z.object({
+    state: z.literal("ready"),
+    snapshot: comparisonId,
+    timeZone: z.string(),
+    buckets: z.array(z.object({ start: timestamp, end: timestamp })),
+    providers: z.array(z.object({ id: comparisonId, name: z.string(), points: z.array(trendPoint) })),
+  }),
+  historyError,
+]);
+
 export const getHistory = defineRpc({ name: "history.list", input: historyInput, output: historyOutput });
 export const getComparison = defineRpc({ name: "history.compare", input: comparisonInput, output: comparisonOutput });
+export const getTrend = defineRpc({ name: "history.trend", input: trendInput, output: trendOutput });
 
 export type HistoryInput = z.infer<typeof historyInput>;
 export type HistoryOutput = z.infer<typeof historyOutput>;
@@ -85,3 +109,5 @@ export type HistoryPageSize = (typeof historyPageSizes)[number];
 export type ComparisonInput = z.infer<typeof comparisonInput>;
 export type ComparisonOutput = z.infer<typeof comparisonOutput>;
 export type ComparisonProvider = z.infer<typeof comparisonProvider>;
+export type TrendInput = z.infer<typeof trendInput>;
+export type TrendOutput = z.infer<typeof trendOutput>;

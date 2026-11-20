@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHistoryComparison } from "./history-comparison.ts";
-import { getComparison, getHistory } from "../shared/history.ts";
+import { getComparison, getHistory, getTrend } from "../shared/history.ts";
 
 const config = { url: "http://127.0.0.1:3425/", timeoutMs: 1000 };
 const base = {
@@ -111,4 +111,75 @@ test("does not reuse another gateway key's snapshot and rejects a missing page b
   apiKey = "second";
   assert.deepEqual(await service.compare({ period: "7d" }), { state: "forbidden" });
   assert.deepEqual(await service.details({ period: "7d", offset: 0, route: result.models[0].providers[0].id }), { state: "forbidden" });
+});
+
+test("computes trends by provider and day, and paginates the exact bucket with Paseo session links", async () => {
+  const day = (n: number) => new Date(2026, 10, n).getTime();
+  const rows = [
+    { ...base, t: new Date(day(20)).toISOString(), ttft_ms: 1_000, ms: 3_000 },
+    { ...base, t: new Date(day(19)).toISOString(), served: "different-model", ttft_ms: 500, ms: 1_500 },
+    ...Array.from({ length: 31 }, (_, i) => ({
+      ...base, t: new Date(day(19) - i - 1).toISOString(),
+      ttft_ms: i === 0 ? 5_000 : 1_000, ms: i === 0 ? 6_000 : 3_000,
+      native_session: "private-session",
+    })),
+    { ...base, t: new Date(day(18)).toISOString(), ttft_ms: 7_000, ms: 10_000, status: 502 },
+    { ...base, t: new Date(day(18)).toISOString(), ttft_ms: 9_000, ms: 10_000, handed_on: true },
+    { ...base, t: new Date(day(18)).toISOString(), ttft_ms: 3_000, ms: 9_000, out: 2_000, flow_ms: 100 },
+    { ...base, t: new Date(day(18)).toISOString(), provider: "vendor-b", providerName: "Vendor B", ttft_ms: 7_000, ms: 11_000 },
+    { ...base, t: new Date(day(16)).toISOString(), provider: "vendor-b", providerName: "Vendor B" },
+  ];
+  let calls = 0;
+  const service = createHistoryComparison(async () => config, async () => {
+    calls++;
+    return respond(rows, 0, 500);
+  });
+  const compared = await service.compare({ period: "7d" });
+  assert.equal(compared.state, "ready");
+  const [model] = compared.models;
+  const output = getTrend.output.parse(await service.trend({ period: "7d", model: model.id }));
+  assert.equal(output.state, "ready");
+  assert.deepEqual(output.buckets.map(({ start }) => start), [day(16), day(17), day(18), day(19), day(20)]);
+  const [a, b] = output.providers;
+  assert.deepEqual(a.points.find((point) => point.start === day(18)), {
+    start: day(18), requests: 33,
+    p90: { value: 1_000, count: 32 }, tpsP50: { value: 200, count: 31 },
+  });
+  assert.equal(a.points.some((point) => point.start === day(19)), false, "actual model stays isolated");
+  assert.deepEqual(b.points.find((point) => point.start === day(18))?.p90, { value: 7_000, count: 1 });
+  assert.equal(b.points.find((point) => point.start === day(16))?.p90, undefined);
+  const drilldown = { period: "7d", route: a.id, bucket: day(18), snapshot: output.snapshot, offset: 30 } as const;
+  const page = await service.details(drilldown, async () => ({
+    entries: [{ agent: { id: "paseo-id", title: "Renamed in Paseo", persistence: { provider: "codex", sessionId: "private-session" } } }],
+    pageInfo: { nextCursor: null },
+  }));
+  assert.equal(page.state, "ready");
+  assert.equal(page.total, 33);
+  assert.equal(page.rows.length, 3);
+  assert.deepEqual(page.rows[0].session, { agentId: "paseo-id", title: "Renamed in Paseo" });
+  assert.doesNotMatch(JSON.stringify(output), /private-session|vendor-a/);
+  assert.equal(calls, 1);
+  await service.compare({ period: "7d", refresh: true });
+  assert.deepEqual(await service.details(drilldown), { state: "expired" });
+  assert.equal(calls, 2);
+});
+
+test("today's trend uses half-open hourly buckets", async () => {
+  const start = new Date(2026, 10, 20, 10).getTime();
+  const rows = [start + 3_600_000, start + 3_599_999].map((time) => ({
+    ...base, t: new Date(time).toISOString(), ttft_ms: 2_000, ms: 6_000,
+  }));
+  const service = createHistoryComparison(async () => config, async () => respond(rows, 0, 500));
+  const compared = await service.compare({ period: "today" });
+  assert.equal(compared.state, "ready");
+  const [model] = compared.models;
+  const output = await service.trend({ period: "today", model: model.id });
+  assert.equal(output.state, "ready");
+  assert.deepEqual(output.buckets, [
+    { start, end: start + 3_600_000 },
+    { start: start + 3_600_000, end: start + 7_200_000 },
+  ]);
+  const page = await service.details({ period: "today", route: model.providers[0].id, bucket: start, offset: 0 });
+  assert.equal(page.state, "ready");
+  assert.deepEqual(page.rows.map((row) => row.time), [start + 3_599_999]);
 });
