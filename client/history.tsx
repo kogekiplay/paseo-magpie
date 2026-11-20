@@ -151,8 +151,8 @@ function columnStyle(column: TableColumn): ViewStyle {
   return { minWidth: 0, flexShrink: 0, ...size, alignItems: column === "status" || isMetric(column) ? "flex-end" : undefined };
 }
 
-function SourceSession({ session, theme, compact, openSession }: {
-  session: HistoryRow["session"]; theme: Theme; compact: boolean; openSession?: (agentId: string) => void;
+function SourceSession({ session, theme, openSession }: {
+  session: HistoryRow["session"]; theme: Theme; openSession?: (agentId: string) => void;
 }) {
   const { t } = useTranslation(messages);
   const { colors } = theme;
@@ -168,16 +168,17 @@ function SourceSession({ session, theme, compact, openSession }: {
           onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)}
           hitSlop={{ top: 5, bottom: 5, left: 0, right: 0 }}
           style={({ pressed }) => ({
-            alignSelf: "flex-start", maxWidth: "100%", minHeight: 30, paddingRight: 6, paddingLeft: 3,
-            alignItems: "center", flexDirection: "row", gap: 6, borderRadius: 5, borderWidth: 1,
+            minHeight: 32, alignItems: "center", flexDirection: "row", gap: 3, borderRadius: 5, borderWidth: 1,
             borderColor: focused ? colors.accent : "transparent",
             backgroundColor: pressed || hovered ? colors.surface1 : "transparent",
           })}
         >
-          <Icon icon="MessageSquare" size={13} color={colors.accent} />
-          <Text numberOfLines={compact ? 2 : 1} style={[textStyle, { flexShrink: 1, textDecorationLine: hovered ? "underline" : "none" }]}>{title}</Text>
+          <Text numberOfLines={2} style={[textStyle, { flex: 1, minWidth: 0, textDecorationLine: hovered ? "underline" : "none" }]}>{title}</Text>
+          <View aria-hidden style={{ flexShrink: 0 }}>
+            <Icon icon="ArrowUpRight" size={11} color={colors.accent} />
+          </View>
         </Pressable>
-      ) : <Text numberOfLines={compact ? 2 : 1} style={textStyle}>{title}</Text>}
+      ) : <Text numberOfLines={2} style={textStyle}>{title}</Text>}
     </View>
   );
 }
@@ -277,7 +278,7 @@ function RequestRow({ row, agent, theme, compact, openSession }: {
     }}>{model || "—"}</Text>;
   }
   const agentName = <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: compact ? "600" : "500" }}>{agentLabels[agent]}</Text>;
-  const source = <SourceSession session={row.session} theme={theme} compact={compact} openSession={openSession} />;
+  const source = <SourceSession session={row.session} theme={theme} openSession={openSession} />;
 
   if (!compact) {
     const cells = {
