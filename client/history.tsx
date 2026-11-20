@@ -12,7 +12,7 @@ import {
   type ComparisonOutput, type ComparisonProvider, type HistoryInput, type HistoryOutput, type HistoryPageSize, type HistoryRow,
 } from "../shared/history.ts";
 import { magpieIcon } from "../shared/icon.ts";
-import { PerformanceTrend, type TrendSelection } from "./history-trend.tsx";
+import { PerformanceTrend, trendColors, type TrendSelection } from "./history-trend.tsx";
 
 const messages = defineTranslations({
   resources: {
@@ -541,8 +541,8 @@ function HistoryPagination({ total, offset, limit, theme, compact, sizeOpen, set
 
 const comparisonMetrics = ["p50", "p90", "tpsP50"] as const;
 
-function ProviderComparisonRow({ row, model, theme, compact, last, onPress }: {
-  row: ComparisonProvider; model: string; theme: Theme; compact: boolean; last: boolean; onPress: () => void;
+function ProviderComparisonRow({ row, model, theme, providerColor, compact, last, onPress }: {
+  row: ComparisonProvider; model: string; theme: Theme; providerColor: string; compact: boolean; last: boolean; onPress: () => void;
 }) {
   const { t } = useTranslation(messages);
   const { colors } = theme;
@@ -572,7 +572,7 @@ function ProviderComparisonRow({ row, model, theme, compact, last, onPress }: {
       })}>
       <View style={{ flex: compact ? undefined : 1.4, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 6 }}>
         <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-          <Text numberOfLines={2} style={{ color: colors.accent, fontSize: 14, fontWeight: "600" }}>{row.name}</Text>
+          <Text numberOfLines={2} style={{ color: providerColor, fontSize: 14, fontWeight: "600" }}>{row.name}</Text>
           <Text style={[numeric, meta]}>{t("total", { total: countFormat.format(row.requests) })}</Text>
         </View>
         {compact ? <Icon icon="ChevronRight" color={colors.accent} size={16} /> : null}
@@ -658,6 +658,7 @@ function PerformanceComparison({ theme, compact, data, period, selectedModel, se
       </View>
     );
   }
+  const providerColors = trendColors(colors.surface0, model.providers);
   return (
     <View style={{ flex: 1, minHeight: 0, width: "100%", maxWidth: 860, alignSelf: "center", gap: 8 }}>
       {!compact ? (
@@ -674,7 +675,7 @@ function PerformanceComparison({ theme, compact, data, period, selectedModel, se
         <FlatList key={`${period}:${model.id}`} data={model.providers} keyExtractor={(item) => item.id} style={{ flexGrow: 0 }}
           ListHeaderComponent={<>
             {compact ? <CompactModelPicker model={model.name} theme={theme} expanded={choosing} onPress={() => setChoosing(true)} /> : null}
-            <PerformanceTrend theme={theme} compact={compact} model={model.id} period={period}
+            <PerformanceTrend theme={theme} compact={compact} model={model.id} period={period} providerColors={providerColors}
               showRequests={(selection) => showRequests({ ...selection, model: model.name })} />
             {!compact ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: tableGutter + 1,
@@ -688,6 +689,7 @@ function PerformanceComparison({ theme, compact, data, period, selectedModel, se
             ) : null}
           </>}
           renderItem={({ item, index }) => <ProviderComparisonRow row={item} model={model.name} theme={theme} compact={compact}
+            providerColor={providerColors.get(item.id) ?? colors.foreground}
             last={index === model.providers.length - 1}
             onPress={() => showRequests({ id: item.id, provider: item.name, model: model.name })} />} />
       </View>

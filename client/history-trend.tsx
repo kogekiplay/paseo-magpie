@@ -10,12 +10,14 @@ const messages = defineTranslations({ resources: {
     provider: "Provider", choose: "Choose provider", loading: "Loading trend…", unavailable: "Could not load the trend.",
     empty: "No samples for this metric.", samples: "{{count}} samples", requests: "{{count}} requests",
     explore: "View samples for {{time}}", open: "View {{provider}} requests for {{time}}",
+    highlight: "Highlight {{provider}}", single: "1 interval", noSamples: "No samples",
   },
   "zh-CN": {
     title: "性能趋势", p90: "首字 P90", tpsP50: "TPS 中位数", seconds: "秒", tokens: "token/秒",
     provider: "供应商", choose: "选择供应商", loading: "正在读取趋势…", unavailable: "无法读取性能趋势。",
     empty: "当前指标没有样本。", samples: "{{count}} 个样本", requests: "{{count}} 条请求",
     explore: "查看 {{time}} 的样本", open: "查看 {{provider}} 在 {{time}} 的请求",
+    highlight: "突出显示 {{provider}}", single: "1 个时段", noSamples: "无样本",
   },
 } });
 
@@ -27,12 +29,26 @@ type Theme = PluginScreenProps["theme"];
 type Ready = Extract<TrendOutput, { state: "ready" }>;
 type Provider = Omit<Ready["providers"][number], "points"> & {
   color: string;
+  sampleBuckets: number;
   points: Map<number, Ready["providers"][number]["points"][number]>;
 };
 export type TrendSelection = { id: string; provider: string; bucket: number; timeLabel: string; snapshot: string };
 
-function Chart({ theme, compact, data, providers, metric, selected, select, tickLabel, intervalLabel }: {
+const palettes = {
+  light: ["#9236b8", "#215fd0", "#af4b0b", "#007c70", "#bb3069", "#577300", "#a02d27", "#00769e", "#6546b8", "#896400"],
+  dark: ["#d490f6", "#83adff", "#ffa96a", "#47d9be", "#ff8db6", "#bddb62", "#ff9386", "#67caef", "#b49fff", "#eacc68"],
+};
+
+export function trendColors(surface: string, providers: readonly { id: string }[]): ReadonlyMap<string, string> {
+  const hex = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(surface);
+  const brightness = hex && (0.2126 * parseInt(hex[1], 16) + 0.7152 * parseInt(hex[2], 16) + 0.0722 * parseInt(hex[3], 16));
+  const palette = brightness !== null && brightness < 128 ? palettes.dark : palettes.light;
+  return new Map(providers.map(({ id }) => id).sort().map((id, i) => [id, palette[i % palette.length]]));
+}
+
+function Chart({ theme, compact, data, providers, metric, spotlight, selected, select, tickLabel, intervalLabel }: {
   theme: Theme; compact: boolean; data: Ready; providers: Provider[]; metric: Metric;
+  spotlight?: string;
   selected?: number; select: (start: number) => void;
   tickLabel: (start: number) => string; intervalLabel: (bucket: Ready["buckets"][number]) => string;
 }) {
@@ -74,7 +90,9 @@ function Chart({ theme, compact, data, providers, metric, selected, select, tick
               {ticks.map((i) => <View key={i} style={{ position: "absolute", left: 0, right: 0,
                 top: height * (1 - i / 3), height: 1, backgroundColor: colors.border }} />)}
               {width > 0 && providers.map((provider) => (
-                <View key={provider.id} style={{ position: "absolute", inset: 0 }}>
+                <View key={provider.id} style={{ position: "absolute", inset: 0,
+                  opacity: spotlight && spotlight !== provider.id ? 0.2 : 1,
+                  zIndex: spotlight === provider.id ? 2 : provider.sampleBuckets === 1 ? 1 : 0 }}>
                   {buckets.map((bucket, i) => {
                     const value = provider.points.get(bucket.start)?.[metric]?.value;
                     if (value === undefined) return null;
@@ -85,7 +103,8 @@ function Chart({ theme, compact, data, providers, metric, selected, select, tick
                     const dx = slotWidth;
                     const dy = lastValue === undefined ? 0 : top - y(lastValue);
                     const distance = Math.hypot(dx, dy);
-                    const radius = bucket.start === selected || buckets.length <= 8 ? 4 : 2.5;
+                    const isolated = provider.sampleBuckets === 1;
+                    const radius = isolated ? 7 : bucket.start === selected || buckets.length <= 8 ? 4 : 2.5;
                     return (
                       <View key={bucket.start} style={{ position: "absolute", inset: 0 }}>
                         {lastValue !== undefined ? <View style={{ position: "absolute",
@@ -93,7 +112,9 @@ function Chart({ theme, compact, data, providers, metric, selected, select, tick
                           backgroundColor: provider.color, transform: [{ rotate: `${Math.atan2(dy, dx)}rad` }],
                         }} /> : null}
                         <View style={{ position: "absolute", left: left - radius, top: top - radius,
-                          width: radius * 2, height: radius * 2, borderRadius: radius, backgroundColor: provider.color }} />
+                          width: radius * 2, height: radius * 2, borderRadius: radius,
+                          borderWidth: isolated ? 2 : 0, borderColor: provider.color,
+                          backgroundColor: isolated ? "transparent" : provider.color }} />
                       </View>
                     );
                   })}
@@ -131,8 +152,9 @@ function Chart({ theme, compact, data, providers, metric, selected, select, tick
   );
 }
 
-export function PerformanceTrend({ theme, compact, model, period, showRequests }: {
+export function PerformanceTrend({ theme, compact, model, period, providerColors, showRequests }: {
   theme: Theme; compact: boolean; model: string; period: HistoryInput["period"];
+  providerColors: ReadonlyMap<string, string>;
   showRequests: (selection: TrendSelection) => void;
 }) {
   const { t, locale } = useTranslation(messages);
@@ -140,6 +162,7 @@ export function PerformanceTrend({ theme, compact, model, period, showRequests }
   const [data, setData] = useState<TrendOutput>();
   const [metric, setMetric] = useState<Metric>("p90");
   const [providerId, setProviderId] = useState<string>();
+  const [spotlight, setSpotlight] = useState<string>();
   const [choosing, setChoosing] = useState(false);
   const [selected, setSelected] = useState<number>();
   useEffect(() => {
@@ -151,14 +174,13 @@ export function PerformanceTrend({ theme, compact, model, period, showRequests }
 
   const { colors } = theme;
   const ready = data?.state === "ready" ? data : undefined;
-  const providers = useMemo(() => {
-    const palette = [colors.accent, colors.statusDanger, colors.statusWarning, colors.foregroundMuted, colors.foreground];
-    return (ready?.providers ?? []).map(({ points, ...provider }, i) => ({
-      ...provider, color: palette[i % palette.length], points: new Map(points.map((point) => [point.start, point])),
-    }));
-  }, [ready, colors]);
+  const providers = useMemo(() => (ready?.providers ?? []).map(({ points, ...provider }) => ({
+    ...provider, color: providerColors.get(provider.id) ?? colors.accent,
+    sampleBuckets: points.filter((point) => point[metric]).length,
+    points: new Map(points.map((point) => [point.start, point])),
+  })), [ready, providerColors, colors.accent, metric]);
   const active = providers.find(({ id }) => id === providerId)
-    ?? providers.find(({ points }) => [...points.values()].some((point) => point[metric])) ?? providers[0];
+    ?? providers.find(({ sampleBuckets }) => sampleBuckets) ?? providers[0];
   const visible = compact && active ? [active] : providers;
   const hourly = period === "today";
   const timeZone = ready?.timeZone;
@@ -168,7 +190,8 @@ export function PerformanceTrend({ theme, compact, model, period, showRequests }
     ? `${day.format(bucket.start)} ${clock.format(bucket.start)}–${clock.format(bucket.end)}` : day.format(bucket.start);
   const bucket = ready?.buckets.find(({ start }) => start === selected);
   const caption = { color: colors.foregroundMuted, fontSize: 12 };
-  const dot = (provider: Provider) => <View aria-hidden style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: provider.color }} />;
+  const dot = (provider: Provider) => <View aria-hidden style={{ width: 8, height: 8, borderRadius: 4,
+    borderWidth: 1.5, borderColor: provider.color, backgroundColor: provider.sampleBuckets === 1 ? "transparent" : provider.color }} />;
   return (
     <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border, padding: compact ? 11 : 14, gap: 10 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
@@ -189,11 +212,13 @@ export function PerformanceTrend({ theme, compact, model, period, showRequests }
           style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 8,
             minHeight: 36, borderRadius: 7, backgroundColor: pressed || choosing ? colors.surface2 : colors.surface1 })}>
           <Text style={[caption, { flex: 1 }]}>{t("provider")}</Text>{dot(active)}
-          <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12, fontWeight: "600", color: colors.foreground }}>{active.name}</Text>
+          <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12, fontWeight: "600", color: active.color }}>{active.name}</Text>
+          {active.sampleBuckets <= 1 ? <Text style={caption}>{t(active.sampleBuckets ? "single" : "noSamples")}</Text> : null}
           <Icon icon="ChevronDown" size={13} color={colors.foregroundMuted} />
         </Pressable>
       ) : null}
       {ready ? <Chart theme={theme} compact={compact} data={ready} providers={visible} metric={metric} selected={selected}
+        spotlight={!compact && providers.some(({ id, sampleBuckets }) => id === spotlight && sampleBuckets) ? spotlight : undefined}
         select={(start) => setSelected((previous) => previous === start ? undefined : start)}
         tickLabel={(start) => hourly ? clock.format(start) : day.format(start)} intervalLabel={describe} />
         : <View style={{ minHeight: 100, justifyContent: "center", alignItems: "center", gap: 6 }}>
@@ -201,10 +226,27 @@ export function PerformanceTrend({ theme, compact, model, period, showRequests }
           <Text accessibilityLiveRegion="polite" style={caption}>{t(data ? "unavailable" : "loading")}</Text>
         </View>}
       {(!compact || providers.length === 1) && visible.length > 0 ? (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-          {visible.map((provider) => <View key={provider.id} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {dot(provider)}<Text style={caption}>{provider.name}</Text>
-          </View>)}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
+          {visible.map((provider) => {
+            const isSpotlit = spotlight === provider.id && provider.sampleBuckets > 0;
+            const legend = (
+              <>
+                {dot(provider)}
+                <Text style={{ ...caption, color: provider.color, fontWeight: "600" }}>{provider.name}</Text>
+                {provider.sampleBuckets <= 1 ? <Text style={caption}>{t(provider.sampleBuckets ? "single" : "noSamples")}</Text> : null}
+              </>
+            );
+            const style = { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 26,
+              paddingHorizontal: 7, borderRadius: 6 } as const;
+            return compact || !provider.sampleBuckets ? <View key={provider.id} style={style}>{legend}</View>
+              : <Pressable key={provider.id} accessibilityRole="button" accessibilityLabel={t("highlight", { provider: provider.name })}
+                aria-pressed={isSpotlit} onPress={() => setSpotlight(isSpotlit ? undefined : provider.id)}
+                style={({ pressed }) => ({
+                  ...style, borderWidth: 1,
+                  borderColor: isSpotlit ? provider.color : colors.border,
+                  backgroundColor: isSpotlit || pressed ? colors.surface1 : colors.surface0,
+                })}>{legend}</Pressable>;
+          })}
         </View>
       ) : null}
       {bucket && ready ? <View style={{ backgroundColor: colors.surface1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}>
@@ -220,7 +262,7 @@ export function PerformanceTrend({ theme, compact, model, period, showRequests }
               id: provider.id, provider: provider.name, bucket: bucket.start, timeLabel: describe(bucket), snapshot: ready.snapshot,
             })}
             style={({ pressed }) => ({ minHeight: 42, flexDirection: "row", alignItems: "center", gap: 6, opacity: pressed ? 0.7 : 1 })}>
-            {dot(provider)}<Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: colors.foreground, fontSize: 13 }}>{provider.name}</Text>
+            {dot(provider)}<Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: provider.color, fontSize: 13 }}>{provider.name}</Text>
             <View style={{ alignItems: "flex-end" }}>
               <Text style={[numeric, { fontSize: 13, fontWeight: "600", color: colors.foreground }]}>{value}</Text>
               <Text style={[numeric, caption]}>{t("samples", { count: sample?.count ?? 0 })} · {t("requests", { count: point.requests })}</Text>
@@ -237,7 +279,7 @@ export function PerformanceTrend({ theme, compact, model, period, showRequests }
               onPress={() => { setProviderId(item.id); setSelected(undefined); setChoosing(false); }}
               style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", gap: 8,
                 borderRadius: 6, backgroundColor: pressed || item.id === active?.id ? colors.surface2 : "transparent" })}>
-              {dot(item)}<Text style={{ flex: 1, color: colors.foreground }}>{item.name}</Text>
+              {dot(item)}<Text style={{ flex: 1, color: item.color }}>{item.name}</Text>
               {item.id === active?.id ? <Icon icon="Check" size={16} color={colors.accent} /> : null}
             </Pressable>} />
         </Modal.Content>
