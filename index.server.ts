@@ -6,16 +6,14 @@ import { watchRoute } from "./shared/route.ts";
 import { getComparison, getHistory, getTrend } from "./shared/history.ts";
 import { createHistoryReader } from "./server/history.ts";
 import { createHistoryComparison } from "./server/history-comparison.ts";
-import { gatewaySettings, getGatewaySettingsStatus } from "./shared/gateway-settings.ts";
-import { readConfig } from "./server/config.ts";
+import { gatewaySettings, readGatewaySettings, saveGatewaySettings } from "./shared/gateway-settings.ts";
+import { createGatewayConfiguration } from "./server/gateway-settings.ts";
 
 export default function contribute(server: PluginServerContext) {
-  const settings = server.registerSettings(gatewaySettings);
-  const config = async () => {
-    const state = await settings.read();
-    return readConfig(process.env, state.status === "ready" ? state.values.url : undefined);
-  };
-  server.handle(getGatewaySettingsStatus, () => ({ environmentOverride: Boolean(process.env.PASEO_MAGPIE_URL) }));
+  const gateway = createGatewayConfiguration(server.registerSettings(gatewaySettings));
+  const config = gateway.config;
+  server.handle(readGatewaySettings, gateway.read);
+  server.handle(saveGatewaySettings, gateway.save);
   server.registerUsageSource(createMagpieUsageSource({ config }));
   server.handle(watchRoute, (input, context) => handleRouteWatch(input, context, config));
   const readHistory = createHistoryReader(config);

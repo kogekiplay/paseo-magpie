@@ -1,6 +1,6 @@
 {
   "name": "paseo-magpie",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Track Magpie quotas, request costs and tokens, actual routes, and provider performance in Paseo.",
   "type": "module",
   "license": "MIT",

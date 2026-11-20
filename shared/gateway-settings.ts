@@ -32,8 +32,33 @@ export const gatewaySettings = defineSettings({
   schema: z.object({ url: gatewayUrlSetting.default("") }).strict(),
 });
 
-export const getGatewaySettingsStatus = defineRpc({
-  name: "gateway.settings-status",
-  input: z.object({}).strict(),
-  output: z.object({ environmentOverride: z.boolean() }),
+export const gatewayKey = z.string().trim().min(1).max(4096).regex(/^[\x21-\x7e]+$/);
+
+const gatewayStatus = z.object({
+  url: gatewayUrlSetting,
+  revision: z.string().max(128),
+  environmentOverride: z.boolean(),
+  keySource: z.enum(["none", "saved", "host", "environment"]),
+  hasSavedKey: z.boolean(),
 });
+
+export const readGatewaySettings = defineRpc({
+  name: "gateway.read",
+  input: z.object({}).strict(),
+  output: gatewayStatus,
+});
+
+export const saveGatewaySettings = defineRpc({
+  name: "gateway.save",
+  input: z.object({
+    url: gatewayUrlSetting,
+    revision: z.string().max(128),
+    apiKey: gatewayKey.nullable().optional(),
+  }).strict(),
+  output: z.discriminatedUnion("status", [
+    z.object({ status: z.literal("saved"), settings: gatewayStatus }),
+    z.object({ status: z.enum(["conflict", "managed"]) }),
+  ]),
+});
+
+export type GatewayStatus = z.infer<typeof gatewayStatus>;
