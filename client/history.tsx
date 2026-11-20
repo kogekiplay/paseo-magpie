@@ -1,5 +1,7 @@
+/* Hallmark · v2.0.0 · scope: app · genre: modern-minimal · theme: Paseo · signature: request ledger */
+/* Hallmark · pre-emit critique: P4 H5 E4 S4 R5 V4 · weakest: E, test the same measurements in wide and compact panes */
 import { useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, Text, View, type TextStyle } from "react-native";
 import {
   defineTranslations, useRpc, useTranslation, type PluginClientContext,
   type PluginScreenProps, type PluginSidebarItemProps,
@@ -12,7 +14,9 @@ const messages = defineTranslations({
   resources: {
     en: {
       title: "Magpie Request History", sidebar: "Magpie Usage", today: "Today", "7d": "7 days", "30d": "30 days",
-      ttft: "First token", duration: "Total time", speed: "TPS", tokens: "{{n}} tokens/s",
+      time: "Time", route: "Model / provider", status: "Status",
+      ttft: "First token", duration: "Total time", speed: "TPS",
+      milliseconds: "ms", seconds: "s", tokens: "tok/s",
       reload: "Refresh", previous: "Previous", next: "Next", retry: "Retry",
       empty: "No gateway requests in this period.",
       forbidden: "The configured Magpie gateway did not grant access to request history.",
@@ -21,11 +25,13 @@ const messages = defineTranslations({
       unknownProvider: "Unknown provider", unknownModel: "Unknown model",
       failed: "Failed", canceled: "Canceled",
       page: "{{from}}–{{to}} of {{total}}",
-      metricHint: "First token is the wait before output begins. ≥ marks a speed lower bound.",
+      metricHint: "≥ Speed lower bound",
     },
     "zh-CN": {
       title: "Magpie 请求历史", sidebar: "Magpie 用量", today: "今天", "7d": "近 7 天", "30d": "近 30 天",
-      ttft: "首字", duration: "总耗时", speed: "TPS", tokens: "{{n}} token/秒",
+      time: "时间", route: "模型 / 供应商", status: "状态",
+      ttft: "首字延迟", duration: "总耗时", speed: "TPS",
+      milliseconds: "毫秒", seconds: "秒", tokens: "token/秒",
       reload: "刷新", previous: "上一页", next: "下一页", retry: "重试",
       empty: "这段时间没有网关请求。",
       forbidden: "当前 Magpie 网关未授予读取请求历史的权限。",
@@ -34,7 +40,7 @@ const messages = defineTranslations({
       unknownProvider: "未知供应商", unknownModel: "未知模型",
       failed: "失败", canceled: "已取消",
       page: "{{from}}–{{to}} / {{total}}",
-      metricHint: "首字是等到开始输出的时间，≥ 表示生成速度的下界。",
+      metricHint: "≥ 速度下界",
     },
   },
 });
@@ -43,56 +49,106 @@ const agentLabels = { codex: "Codex", claude: "Claude Code" };
 const screenId = "request-history";
 type Theme = PluginScreenProps["theme"];
 
-function formatTime(ms: number | undefined) {
-  if (ms === undefined) return "—";
-  return ms < 1_000 ? `${ms} ms` : `${(ms / 1_000).toFixed(ms < 10_000 ? 1 : 0)} s`;
-}
+const table = { time: 134, route: 2.4, ttft: 1, duration: 1, speed: 1, status: 80 };
+const numeric: TextStyle = { fontVariant: ["tabular-nums"] };
+const dateFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+const clockFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 
-function Control({ label, onPress, theme, selected, disabled, icon }: {
-  label: string; onPress: () => void; theme: Theme; selected?: boolean; disabled?: boolean; icon?: "RefreshCw";
+function Control({ label, onPress, theme, selected, disabled, icon, compact }: {
+  label: string; onPress: () => void; theme: Theme; selected?: boolean; disabled?: boolean;
+  icon?: "RefreshCw" | "ChevronLeft" | "ChevronRight"; compact?: boolean;
 }) {
   const colors = theme.colors;
+  const [focused, setFocused] = useState(false);
   return (
     <Pressable
       accessibilityRole="button" accessibilityLabel={label}
       accessibilityState={{ selected, disabled }} disabled={disabled} onPress={onPress}
+      onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+      hitSlop={4}
       style={({ pressed }) => ({
-        minHeight: 40, minWidth: 40, alignItems: "center", justifyContent: "center", paddingHorizontal: 12,
-        borderRadius: 8, opacity: disabled ? 0.45 : 1,
-        backgroundColor: selected ? colors.surface2 : pressed ? colors.surface1 : colors.surface0,
+        minHeight: compact ? 40 : 34, minWidth: compact ? 40 : 34, alignItems: "center", justifyContent: "center",
+        paddingHorizontal: icon ? 0 : compact ? 10 : 12, borderRadius: 6, borderWidth: 1,
+        borderColor: focused ? colors.accent : selected ? colors.border : colors.surface1,
+        backgroundColor: selected ? colors.surface0 : pressed ? colors.surface2 : colors.surface1,
+        opacity: disabled ? 0.48 : 1,
       })}
     >
       {icon ? <Icon icon={icon} color={colors.foreground} size={16} />
-        : <Text style={{ color: selected ? colors.foreground : colors.foregroundMuted, fontSize: 13, fontWeight: selected ? "600" : "400" }}>{label}</Text>}
+        : <Text style={{ color: selected ? colors.foreground : colors.foregroundMuted, fontSize: 13, fontWeight: selected ? "600" : "500" }}>{label}</Text>}
     </Pressable>
   );
 }
 
-function RequestRow({ row, theme }: { row: HistoryRow; theme: Theme }) {
+function TableHeading({ theme }: { theme: Theme }) {
+  const { t } = useTranslation(messages);
+  const label = { color: theme.colors.foregroundMuted, fontSize: 12, fontWeight: "500" as const };
+  return (
+    <View style={{ flexDirection: "row", gap: 12, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: theme.colors.surface1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: theme.colors.border }}>
+      <Text style={[label, { width: table.time }]}>{t("time")}</Text>
+      <Text style={[label, { flex: table.route }]}>{t("route")}</Text>
+      {(["ttft", "duration", "speed"] as const).map((key) => (
+        <Text key={key} style={[label, { flex: table[key], textAlign: "right" }]} numberOfLines={1}>{t(key)}</Text>
+      ))}
+      <Text style={[label, { width: table.status, textAlign: "right" }]}>{t("status")}</Text>
+    </View>
+  );
+}
+
+function RequestRow({ row, theme, compact }: { row: HistoryRow; theme: Theme; compact: boolean }) {
   const { t } = useTranslation(messages);
   const colors = theme.colors;
-  const status = [row.outcome === "completed" ? undefined : t(row.outcome), row.status && `HTTP ${row.status}`]
-    .filter(Boolean).join(" · ");
-  const speed = row.speed ? `${row.speed.lowerBound ? "≥" : ""}${t("tokens", { n: Math.round(row.speed.tps) })}` : "—";
+  const status = row.status ? String(row.status) : row.outcome === "completed" ? "—" : t(row.outcome);
+  const statusColor = row.outcome === "failed" ? colors.statusDanger : colors.foregroundMuted;
+  const date = new Date(row.time);
+  const formatTime = (ms: number | undefined) => ms === undefined ? ["—"] : ms < 1_000
+    ? [String(ms), t("milliseconds")] : [(ms / 1_000).toFixed(ms < 10_000 ? 1 : 0), t("seconds")];
+  const metrics = [
+    [t("ttft"), ...formatTime(row.ttftMs)],
+    [t("duration"), ...formatTime(row.durationMs)],
+    [t("speed"), ...(row.speed ? [`${row.speed.lowerBound ? "≥" : ""}${Math.round(row.speed.tps)}`, t("tokens")] : ["—"])],
+  ];
+  const identity = (
+    <View style={{ flex: table.route, minWidth: 0, gap: 2 }}>
+      <Text selectable style={{ color: colors.foreground, fontSize: 14, fontWeight: "600" }}>{row.model || t("unknownModel")}</Text>
+      <Text selectable style={{ color: colors.foregroundMuted, fontSize: 12 }}>{row.provider || t("unknownProvider")}</Text>
+    </View>
+  );
+  const timing = (
+    <View style={{ width: compact ? undefined : table.time, flexShrink: 0, alignItems: compact ? "flex-end" : "flex-start", gap: 2 }}>
+      <Text style={[numeric, { color: colors.foreground, fontSize: 13 }]}>{clockFormat.format(date)}</Text>
+      <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{dateFormat.format(date)}</Text>
+    </View>
+  );
+  const statusText = (
+    <Text aria-label={row.status ? `HTTP ${row.status}${row.outcome === "completed" ? "" : `, ${t(row.outcome)}`}` : status}
+      style={[numeric, { color: statusColor, fontSize: 12, textAlign: "right", width: compact ? undefined : table.status }]}>
+      {status}
+    </Text>
+  );
+  const values = metrics.map(([label, value, unit]) => (
+    <View key={label} style={{ flex: 1, minWidth: 0, alignItems: compact ? "flex-start" : "flex-end", gap: 3 }}>
+      {compact ? <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{label}</Text> : null}
+      <Text selectable style={[numeric, { color: value === "—" ? colors.foregroundMuted : colors.foreground, fontSize: compact ? 16 : 14, fontWeight: "500" }]}>
+        {value}{unit ? <Text style={{ color: colors.foregroundMuted, fontSize: 11, fontWeight: "400" }}> {unit}</Text> : null}
+      </Text>
+    </View>
+  ));
 
-  return (
-    <View style={{ paddingVertical: 12, gap: 8, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "baseline", columnGap: 12, rowGap: 3 }}>
-        <Text selectable style={{ color: colors.foreground, flexGrow: 1, flexShrink: 1, fontSize: 14, fontWeight: "600" }}>
-          {row.provider || t("unknownProvider")} · {row.model || t("unknownModel")}
-        </Text>
-        <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>
-          {new Date(row.time).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-          {status ? ` · ${status}` : ""}
-        </Text>
+  if (!compact) {
+    return (
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, paddingHorizontal: 14, minHeight: 54, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        {timing}{identity}{values}{statusText}
       </View>
-      <View style={{ flexDirection: "row", gap: 10 }}>
-        {[[t("ttft"), formatTime(row.ttftMs)], [t("duration"), formatTime(row.durationMs)], [t("speed"), speed]].map(([label, value]) => (
-          <View key={label} style={{ flex: 1, gap: 2 }}>
-            <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{label}</Text>
-            <Text selectable style={{ color: value === "—" ? colors.foregroundMuted : colors.foreground, fontSize: 14, fontVariant: ["tabular-nums"] }}>{value}</Text>
-          </View>
-        ))}
+    );
+  }
+  return (
+    <View style={{ paddingVertical: 12, gap: 9, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+        {identity}{timing}{statusText}
+      </View>
+      <View style={{ flexDirection: "row", gap: 10, paddingHorizontal: 10, paddingVertical: 7, backgroundColor: colors.surface1, borderRadius: 6 }}>
+        {values}
       </View>
     </View>
   );
@@ -105,6 +161,7 @@ function HistoryList({ theme, layout }: PluginScreenProps) {
   const [agent, setAgent] = useState<HistoryInput["agent"]>("codex");
   const [offset, setOffset] = useState(0);
   const [revision, setRevision] = useState(0);
+  const [paneWidth, setPaneWidth] = useState(0);
   const key = `${period}:${agent}:${offset}:${revision}`;
   const [result, setResult] = useState<{ key: string; response: HistoryOutput }>();
   const response = result?.key === key ? result.response : undefined;
@@ -119,36 +176,45 @@ function HistoryList({ theme, layout }: PluginScreenProps) {
 
   const page = response?.state === "ready" ? response : undefined;
   const colors = theme.colors;
-  const padding = layout.compact ? 14 : 24;
+  const compact = layout.compact || paneWidth < 760;
+  const padding = compact ? 14 : 24;
+  const filterGroup = { flexDirection: "row" as const, alignItems: "center" as const, padding: 3, gap: 1, backgroundColor: colors.surface1, borderRadius: 9 };
   return (
-    <View style={{ flex: 1, backgroundColor: colors.surface0, paddingHorizontal: padding, paddingTop: 8 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 4, paddingBottom: 6 }}>
-        {historyAgents.map((value) => (
-          <Control key={value} label={agentLabels[value]} theme={theme} selected={agent === value}
-            onPress={() => { setAgent(value); setOffset(0); }} />
-        ))}
-        <View style={{ flex: 1 }} />
-        <Control label={t("reload")} theme={theme} icon="RefreshCw" onPress={refresh} />
+    <View onLayout={({ nativeEvent }) => setPaneWidth(nativeEvent.layout.width)}
+      style={{ flex: 1, width: "100%", maxWidth: 1256, alignSelf: "center", backgroundColor: colors.surface0, paddingHorizontal: padding }}>
+      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: 12, rowGap: 7, paddingVertical: 12 }}>
+        <View style={filterGroup}>
+          {historyAgents.map((value) => (
+            <Control key={value} label={agentLabels[value]} theme={theme} selected={agent === value} compact={compact}
+              onPress={() => { setAgent(value); setOffset(0); }} />
+          ))}
+        </View>
+        <View style={filterGroup}>
+          {historyPeriods.map((value) => (
+            <Control key={value} label={t(value)} theme={theme} selected={period === value} compact={compact}
+              onPress={() => { setPeriod(value); setOffset(0); }} />
+          ))}
+        </View>
+        <View style={{ flexGrow: 1, alignItems: "flex-end" }}>
+          <Control label={t("reload")} theme={theme} icon="RefreshCw" onPress={refresh} compact={compact} />
+        </View>
       </View>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
-        {historyPeriods.map((value) => (
-          <Control key={value} label={t(value)} theme={theme} selected={period === value}
-            onPress={() => { setPeriod(value); setOffset(0); }} />
-        ))}
-      </View>
-      <Text style={{ color: colors.foregroundMuted, fontSize: 12, paddingVertical: 8 }}>{t("metricHint")}</Text>
       {page ? (
         <>
-          <FlatList key={key} data={page.rows} renderItem={({ item }) => <RequestRow row={item} theme={theme} />}
+          {!compact && page.rows.length ? <TableHeading theme={theme} /> : null}
+          <FlatList style={{ flex: 1 }} key={key} data={page.rows} renderItem={({ item }) => <RequestRow row={item} theme={theme} compact={compact} />}
             keyExtractor={(item, index) => `${item.time}:${index}`}
             ListEmptyComponent={<Text style={{ color: colors.foregroundMuted, paddingVertical: 24 }}>{t("empty")}</Text>} />
-          {page.total > historyPageSize || offset > 0 ? (
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: 4 }}>
-              <Control label={t("previous")} theme={theme} disabled={!offset} onPress={() => setOffset(Math.max(0, offset - historyPageSize))} />
-              <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>
-                {t("page", { from: Math.min(page.offset + 1, page.total), to: Math.min(page.offset + historyPageSize, page.total), total: page.total })}
-              </Text>
-              <Control label={t("next")} theme={theme} disabled={page.offset + historyPageSize >= page.total} onPress={() => setOffset(page.offset + historyPageSize)} />
+          {page.rows.length || offset > 0 ? (
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: 8, gap: 8 }}>
+              <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{t("metricHint")}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+                <Text accessibilityLiveRegion="polite" style={[numeric, { color: colors.foregroundMuted, fontSize: 12 }]}>
+                  {t("page", { from: Math.min(page.offset + 1, page.total), to: Math.min(page.offset + historyPageSize, page.total), total: page.total })}
+                </Text>
+              <Control label={t("previous")} icon="ChevronLeft" theme={theme} compact={compact} disabled={!offset} onPress={() => setOffset(Math.max(0, offset - historyPageSize))} />
+                <Control label={t("next")} icon="ChevronRight" theme={theme} compact={compact} disabled={page.offset + historyPageSize >= page.total} onPress={() => setOffset(page.offset + historyPageSize)} />
+              </View>
             </View>
           ) : null}
         </>

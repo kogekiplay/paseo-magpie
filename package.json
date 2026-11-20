@@ -1,6 +1,6 @@
 {
   "name": "paseo-magpie",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Show Magpie quotas, actual model routing, and request performance history in Paseo.",
   "type": "module",
   "license": "MIT",
