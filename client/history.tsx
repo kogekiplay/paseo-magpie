@@ -96,7 +96,7 @@ function Control({ label, onPress, theme, selected, disabled, icon, segment, var
   label: string; onPress: () => void; theme: Theme; selected?: boolean; disabled?: boolean;
   icon?: string;
   segment?: "agent" | "period";
-  variant?: "refresh" | "pagination" | "page" | "pageSize";
+  variant?: "refresh" | "pagination" | "page" | "pageSize" | "disclosure";
   display?: string;
   expanded?: boolean;
   touch?: boolean;
@@ -107,32 +107,41 @@ function Control({ label, onPress, theme, selected, disabled, icon, segment, var
   const primary = selected && segment === "agent";
   const activePage = selected && variant === "page";
   const pagination = variant === "pagination" || variant === "page" || variant === "pageSize";
+  const disclosure = variant === "disclosure";
+  const quiet = variant === "pagination" || variant === "page" || disclosure;
   const height = touch ? touchToolbarHeight : variant === "refresh" ? toolbarHeight
     : pagination ? footerHeight : segment ? toolbarHeight - 6 : 36;
-  const radius = variant === "refresh" ? toolbarRadius : pagination ? footerRadius : toolbarRadius - 4;
+  const radius = variant === "refresh" ? toolbarRadius : pagination || quiet ? footerRadius : toolbarRadius - 4;
   const textColor = primary ? colors.surface0 : activePage ? colors.accentForeground
-    : selected || !segment ? colors.foreground : colors.foregroundMuted;
+    : disclosure || (!selected && segment) ? colors.foregroundMuted : colors.foreground;
   return (
     <Pressable
       accessibilityRole="button" accessibilityLabel={label}
       accessibilityState={{ selected, disabled, expanded }} disabled={disabled} onPress={onPress}
-      onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+      onFocus={(event) => {
+        const target = event.currentTarget as unknown as { matches?: (selector: string) => boolean } | null;
+        setFocused(target?.matches?.(":focus-visible") ?? true);
+      }}
+      onBlur={() => setFocused(false)}
       onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)}
-      hitSlop={segment ? { top: 4, bottom: 4, left: 0, right: 0 } : pagination ? { top: 5, bottom: 5, left: 0, right: 0 } : 4}
+      hitSlop={touch ? 0 : segment ? { top: 4, bottom: 4, left: 0, right: 0 }
+        : pagination ? { top: 5, bottom: 5, left: 0, right: 0 } : 4}
       style={({ pressed }) => ({
         minHeight: height, minWidth: height, alignItems: "center", justifyContent: "center",
         flexDirection: "row", gap: 6,
-        paddingHorizontal: variant === "pageSize" ? 10 : icon || pagination ? 0 : 10,
+        paddingHorizontal: disclosure ? 8 : variant === "pageSize" ? 10 : icon || pagination ? 0 : 10,
         borderRadius: radius, borderWidth: 1,
-        borderColor: focused || activePage ? colors.accent : primary ? colors.foreground
-          : variant === "pagination" || variant === "page" ? "transparent" : selected || !segment ? colors.border : colors.surface1,
+        borderColor: (focused && !disabled) || activePage ? colors.accent : primary ? colors.foreground
+          : quiet ? "transparent" : selected || !segment ? colors.border : colors.surface1,
         backgroundColor: primary ? colors.foreground : activePage ? colors.accent : selected ? colors.surface0
-          : pressed || (hovered && !disabled) ? colors.surface2 : pagination && variant !== "pageSize" ? "transparent" : colors.surface1,
+          : pressed || (hovered && !disabled && !disclosure) ? colors.surface2 : quiet ? "transparent" : colors.surface1,
         opacity: disabled ? 0.48 : pressed ? 0.8 : 1,
       })}
     >
       {!icon || display ? <Text style={[pagination && numeric, { color: textColor, fontSize: 13, fontWeight: selected ? "600" : "500" }]}>{display ?? label}</Text> : null}
-      {icon ? <Icon icon={icon} color={textColor} size={16} /> : null}
+      {icon ? <View pointerEvents="none" aria-hidden>
+        <Icon icon={icon} color={textColor} size={disclosure ? 13 : 16} />
+      </View> : null}
     </Pressable>
   );
 }
@@ -325,7 +334,7 @@ function RequestRow({ row, agent, theme, compact, dateFormat, openSession }: {
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <View style={{ flex: 1, minWidth: 0 }}>{source}</View>
         <Control label={t(expanded ? "hideDetails" : "details")} display={t(expanded ? "hideDetails" : "details")}
-          icon={expanded ? "ChevronUp" : "ChevronDown"} theme={theme} variant="pagination" touch expanded={expanded}
+          icon={expanded ? "ChevronUp" : "ChevronDown"} theme={theme} variant="disclosure" touch expanded={expanded}
           onPress={() => setExpanded(!expanded)} />
       </View>
       {expanded ? (
@@ -411,11 +420,12 @@ function HistoryPagination({ total, offset, limit, theme, compact, sizeOpen, set
   if (compact) {
     return (
       <View style={{
-        flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4, paddingHorizontal: 8,
+        flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8,
+        paddingHorizontal: tableGutter, paddingVertical: 6,
         borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface0,
       }}>
         <View style={{ flexShrink: 1, minWidth: 0 }}>{totalText}</View>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
           {nav("previous", "ChevronLeft", current - 1, current === 1)}
           <Control label={t("pageOptions", { page: current, last })} display={t("pagePosition", { page: current, last })}
             icon="ChevronDown" theme={theme} variant="pageSize" touch onPress={() => setSizeOpen(true)} />
@@ -577,7 +587,7 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
       )}
       <View style={{ flex: 1, minHeight: 0, borderWidth: compact ? 0 : 1, borderColor: colors.border, borderRadius: compact ? 0 : toolbarRadius }}>
         {page ? (
-          <FlatList style={{ flex: 1 }} key={key} data={page.rows}
+          <FlatList style={{ flex: 1 }} key={key} data={page.rows} contentContainerStyle={compact ? { paddingBottom: 8 } : undefined}
             renderItem={({ item }) => <RequestRow row={item} agent={agent} theme={theme} compact={compactRows}
               dateFormat={dateFormat} openSession={openSession} />}
             keyExtractor={(item, index) => `${item.time}:${index}`}
