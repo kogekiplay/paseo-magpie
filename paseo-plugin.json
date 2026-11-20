@@ -3,13 +3,14 @@
   "name": "Magpie",
   "icon": "assets/icon.png",
   "media": [
-    "assets/preview.png"
+    "assets/preview.png",
+    "assets/request-history.png"
   ],
-  "description": "Show Magpie quotas, actual model routing, and request performance history.",
+  "description": "Track Magpie quotas, inspect actual routes, and compare provider performance by model.",
   "translations": {
     "zh-CN": {
       "name": "Magpie",
-      "description": "查看 Magpie 账号额度、实际模型路由与历史请求性能。"
+      "description": "查看 Magpie 账号额度和实际路由，按模型对比供应商的首字延迟与生成速度。"
     }
   },
   "requirements": {

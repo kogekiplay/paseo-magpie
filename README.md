@@ -4,13 +4,15 @@
 
 <h1 align="center">Magpie for Paseo</h1>
 
-<p align="center">把 Magpie 的额度、余额和实际模型路由带到 Paseo。</p>
+<p align="center">Magpie 额度、实际路由、请求历史与供应商性能对比。</p>
 
-把 [Magpie](https://github.com/yetone/magpie) 的账号额度与余额接入 [Paseo](https://paseo.sh) 原生 **Usage / 额度** 入口，并在会话输入框附近显示实际模型路由。
+在 [Paseo](https://paseo.sh) 原生额度入口查看 [Magpie](https://github.com/yetone/magpie) 的账号用量，在会话里查看实际路由。侧栏的「Magpie 用量」提供请求明细，并按实际模型对比各供应商的首字延迟和 TPS。
+
+![Magpie 性能对比，Paseo 界面与示例数据](assets/preview.png)
 
 图标使用 [Magpie 官方图形](https://github.com/yetone/magpie/tree/main/internal/gui/assets/icons)，原始许可见 [assets/MAGPIE-LICENSE](assets/MAGPIE-LICENSE)。
 
-Shows Magpie account quotas in Paseo's native Usage and the current session's actual model routing in a composer pill. Supports Codex and Claude Code sessions routed through Magpie.
+Track account quotas, inspect actual routes, and compare provider performance by served model in Paseo.
 
 ## 安装
 

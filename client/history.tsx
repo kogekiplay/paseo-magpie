@@ -16,7 +16,7 @@ import { magpieIcon } from "../shared/icon.ts";
 const messages = defineTranslations({
   resources: {
     en: {
-      title: "Magpie Request History", sidebar: "Magpie Usage", today: "Today", "7d": "7 days", "30d": "30 days",
+      title: "Magpie Usage", sidebar: "Magpie Usage", today: "Today", "7d": "7 days", "30d": "30 days",
       time: "Time", agent: "Agent", requested: "Requested model", provider: "Provider / account",
       model: "Served model", input: "Input", output: "Output", cache: "Cache hit rate", cost: "Cost",
       status: "Status", session: "Source session",
@@ -38,7 +38,7 @@ const messages = defineTranslations({
       metricHint: "Speed lower bound",
       details: "Details", hideDetails: "Hide details",
       choosePeriod: "Choose date range", periodFilter: "Choose date range. Current: {{period}}",
-      compare: "Compare routes", requests: "Requests", chooseModel: "Choose served model",
+      compare: "Compare", requests: "Requests", chooseModel: "Choose served model",
       selectModel: "Choose served model. Current: {{model}}", supplier: "Provider",
       p50: "First token P50", p90: "First token P90", tpsP50: "Median TPS",
       samples: "{{size}} samples", comparing: "Comparing request history…",
@@ -49,7 +49,7 @@ const messages = defineTranslations({
       limited: "Includes the {{size}} most recent gateway records in this period.",
     },
     "zh-CN": {
-      title: "Magpie 请求历史", sidebar: "Magpie 用量", today: "今天", "7d": "近 7 天", "30d": "近 30 天",
+      title: "Magpie 用量", sidebar: "Magpie 用量", today: "今天", "7d": "近 7 天", "30d": "近 30 天",
       time: "时间", agent: "Agent", requested: "请求模型", provider: "供应商 / 账号",
       model: "实际模型", input: "输入", output: "输出", cache: "缓存命中率", cost: "费用",
       status: "状态", session: "来源会话",
@@ -116,7 +116,7 @@ function Control({ label, onPress, theme, selected, disabled, icon, segment, var
   label: string; onPress: () => void; theme: Theme; selected?: boolean; disabled?: boolean;
   icon?: string;
   segment?: boolean;
-  variant?: "refresh" | "pagination" | "page" | "pageSize" | "disclosure";
+  variant?: "refresh" | "pagination" | "page" | "pageSize" | "disclosure" | "viewTab";
   display?: string;
   expanded?: boolean;
   size?: "touch" | "compact";
@@ -124,7 +124,7 @@ function Control({ label, onPress, theme, selected, disabled, icon, segment, var
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
-  const activePage = selected && variant === "page";
+  const active = selected && (variant === "page" || variant === "viewTab");
   const pagination = variant === "pagination" || variant === "page" || variant === "pageSize";
   const disclosure = variant === "disclosure";
   const quiet = variant === "pagination" || variant === "page" || disclosure;
@@ -132,12 +132,12 @@ function Control({ label, onPress, theme, selected, disabled, icon, segment, var
     : variant === "refresh" ? toolbarHeight
     : pagination ? footerHeight : segment ? toolbarHeight - 6 : 36;
   const radius = size === "compact" || pagination || quiet ? footerRadius : variant === "refresh" ? toolbarRadius : toolbarRadius - 4;
-  const textColor = activePage ? colors.accentForeground
+  const textColor = active ? colors.accentForeground
     : disclosure || (!selected && segment) ? colors.foregroundMuted : colors.foreground;
   return (
     <Pressable
-      accessibilityRole="button" accessibilityLabel={label}
-      accessibilityState={{ selected, disabled }} aria-expanded={expanded} disabled={disabled} onPress={onPress}
+      accessibilityRole={variant === "viewTab" ? "tab" : "button"} accessibilityLabel={label}
+      accessibilityState={{ disabled }} aria-selected={selected} aria-expanded={expanded} disabled={disabled} onPress={onPress}
       onFocus={(event) => {
         const target = event.currentTarget as unknown as { matches?: (selector: string) => boolean } | null;
         setFocused(target?.matches?.(":focus-visible") ?? true);
@@ -151,11 +151,12 @@ function Control({ label, onPress, theme, selected, disabled, icon, segment, var
         minHeight: height, minWidth: size === "compact" && !display ? touchControlHeight : height, maxWidth: "100%",
         alignItems: "center", justifyContent: "center",
         flexDirection: "row", gap: 6,
-        paddingHorizontal: disclosure ? 8 : variant === "pageSize" ? 10 : icon || pagination ? 0 : 10,
+        paddingHorizontal: variant === "viewTab" && size === "compact" ? 7
+          : disclosure ? 8 : variant === "pageSize" ? 10 : icon || pagination ? 0 : 10,
         borderRadius: radius, borderWidth: 1,
-        borderColor: (focused && !disabled) || activePage ? colors.accent
+        borderColor: (focused && !disabled) || active ? colors.accent
           : quiet ? "transparent" : selected || !segment ? colors.border : colors.surface1,
-        backgroundColor: activePage ? colors.accent : selected ? colors.surface0
+        backgroundColor: active ? colors.accent : selected ? colors.surface0
           : pressed || (hovered && !disabled && !disclosure) ? colors.surface2 : quiet ? "transparent" : colors.surface1,
         opacity: disabled ? 0.48 : pressed ? 0.8 : 1,
       })}
@@ -747,24 +748,29 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
     </View>
   );
   const reload = <Control label={t("reload")} theme={theme} icon="RefreshCw" onPress={refresh} variant="refresh" size={compact ? "compact" : undefined} />;
-  const viewLabel = t(view === "compare" ? "requests" : "compare");
-  const switchView = <Control label={viewLabel} display={viewLabel} icon={view === "compare" ? "List" : "ChartNoAxesColumn"} theme={theme}
-    variant="pageSize" size={compact ? "compact" : undefined} onPress={() => {
-      setView(view === "compare" ? "requests" : "compare"); setMenu(undefined);
-    }} />;
+  const viewTabs = (
+    <View accessibilityRole="tablist" style={compact
+      ? { flexDirection: "row", gap: 2, backgroundColor: colors.surface1, borderRadius: footerRadius }
+      : filterGroup}>
+      {(["requests", "compare"] as const).map((value) => (
+        <Control key={value} label={t(value)} theme={theme} selected={view === value} variant="viewTab"
+          segment size={compact ? "compact" : undefined} onPress={() => { setView(value); setMenu(undefined); }} />
+      ))}
+    </View>
+  );
   return (
     <View onLayout={({ nativeEvent }) => setPaneWidth(nativeEvent.layout.width)}
       style={{ flex: 1, width: "100%", maxWidth: 1256, alignSelf: "center", backgroundColor: colors.surface0, paddingHorizontal: padding, paddingBottom: compact ? 0 : padding }}>
       {compact ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: compactControlInset }}>
-          {switchView}<View style={{ flex: 1 }} />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingVertical: compactControlInset }}>
+          {viewTabs}<View style={{ flex: 1 }} />
           <Control label={t("periodFilter", { period: t(period) })} display={t(period)} icon="ChevronDown"
             theme={theme} variant="pageSize" size="compact" expanded={menu === "period"} onPress={() => setMenu("period")} />
           {reload}
         </View>
       ) : (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 6 }}>
-          {switchView}<View style={{ flex: 1 }} />{periods}{reload}
+          {viewTabs}<View style={{ flex: 1 }} />{periods}{reload}
         </View>
       )}
       {view === "compare" ? (
