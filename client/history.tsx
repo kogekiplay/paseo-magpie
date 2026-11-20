@@ -1,7 +1,7 @@
 /* Hallmark · v2.0.0 · scope: app · genre: modern-minimal · theme: Paseo · signature: request ledger */
 /* Hallmark · pre-emit critique: compact controls leave the request list more room while preserving touch targets. */
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, View, type TextStyle, type ViewStyle } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, SafeAreaView, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import {
   defineTranslations, useRpc, useTranslation, type PluginClientContext,
   type PluginScreenProps, type PluginSidebarItemProps,
@@ -178,7 +178,7 @@ function SourceSession({ session, theme, compact, openSession }: {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const title = session ? session.title || t("untitled") : t("unmatched");
-  const textStyle = { fontSize: compact ? 13 : 12, color: session && compact ? colors.accent : session ? colors.foreground : colors.foregroundMuted };
+  const textStyle = { fontSize: compact ? 13 : 12, color: session && openSession ? colors.accent : session ? colors.foreground : colors.foregroundMuted };
   return (
     <View style={{ minWidth: 0 }}>
       {session && openSession ? (
@@ -188,11 +188,12 @@ function SourceSession({ session, theme, compact, openSession }: {
           hitSlop={{ top: 5, bottom: 5, left: 0, right: 0 }}
           style={({ pressed }) => ({
             minHeight: compact ? 44 : 32, alignItems: "center", flexDirection: "row", gap: 4, borderRadius: 5, borderWidth: 1,
+            alignSelf: compact ? "stretch" : "flex-start", maxWidth: "100%", paddingRight: compact ? 0 : 5,
             borderColor: focused ? colors.accent : "transparent",
             backgroundColor: pressed || hovered ? colors.surface1 : "transparent",
           })}
         >
-          <Text numberOfLines={2} style={[textStyle, { flex: compact ? undefined : 1, flexShrink: 1, minWidth: 0, textDecorationLine: hovered ? "underline" : "none" }]}>{title}</Text>
+          <Text numberOfLines={2} style={[textStyle, { flexShrink: 1, minWidth: 0, textDecorationLine: hovered ? "underline" : "none" }]}>{title}</Text>
           <View aria-hidden style={{ flexShrink: 0 }}>
             <Icon icon="ArrowUpRight" size={11} color={colors.accent} />
           </View>
@@ -616,7 +617,16 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
 }
 
 function HistoryScreen(props: PluginScreenProps) {
-  return <HistoryList key={props.host.id} {...props} />;
+  if (props.layout.platform !== "ios") {
+    return <HistoryList key={props.host.id} {...props} />;
+  }
+  // The screen body reaches the window edge on iOS. Keep layout padding on
+  // HistoryList so the native wrapper can apply the actual device insets.
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: props.theme.colors.surface0 }}>
+      <HistoryList key={props.host.id} {...props} />
+    </SafeAreaView>
+  );
 }
 
 function HistorySidebar({ currentScreen, openScreen }: PluginSidebarItemProps) {
