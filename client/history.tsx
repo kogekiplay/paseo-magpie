@@ -588,6 +588,40 @@ function ProviderComparisonRow({ row, model, theme, compact, last, onPress }: {
 
 type RouteFilter = { id: string; provider: string; model: string };
 
+function CompactModelPicker({ model, theme, expanded, onPress }: {
+  model: string; theme: Theme; expanded: boolean; onPress: () => void;
+}) {
+  const { t } = useTranslation(messages);
+  const { colors } = theme;
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={t("selectModel", { model })}
+      aria-expanded={expanded} onPress={onPress}
+      onFocus={(event) => {
+        const target = event.currentTarget as unknown as { matches?: (selector: string) => boolean } | null;
+        setFocused(target?.matches?.(":focus-visible") ?? true);
+      }}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)}
+      style={({ pressed }) => ({
+        minHeight: touchControlHeight, paddingHorizontal: tableGutter,
+        flexDirection: "row", alignItems: "center", gap: 8,
+        borderWidth: 1, borderColor: focused ? colors.accent : "transparent",
+        borderBottomColor: focused ? colors.accent : colors.border,
+        backgroundColor: pressed || hovered || expanded ? colors.surface2 : colors.surface1,
+      })}>
+      <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>{t("model")}</Text>
+      <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 13, fontWeight: "600", flex: 1, minWidth: 0, textAlign: "right" }}>
+        {model}
+      </Text>
+      <View pointerEvents="none" aria-hidden>
+        <Icon icon="ChevronDown" color={colors.foregroundMuted} size={14} />
+      </View>
+    </Pressable>
+  );
+}
+
 function PerformanceComparison({ theme, compact, data, selectedModel, selectModel, showRequests, retry }: {
   theme: Theme; compact: boolean; data: ComparisonOutput | undefined; selectedModel: string | undefined;
   selectModel: (id: string) => void; showRequests: (route: RouteFilter) => void; retry: () => void;
@@ -619,16 +653,20 @@ function PerformanceComparison({ theme, compact, data, selectedModel, selectMode
   }
   return (
     <View style={{ flex: 1, minHeight: 0, width: "100%", maxWidth: 860, alignSelf: "center", gap: 8 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 2 }}>
-        <Text style={caption}>{t("model")}</Text>
-        <View style={{ flexShrink: 1, minWidth: 0 }}>
-          <Control label={t("selectModel", { model: model.name })} display={model.name} icon="ChevronDown" theme={theme}
-            variant="pageSize" size={compact ? "touch" : undefined} expanded={choosing} onPress={() => setChoosing(true)} />
+      {!compact ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 2 }}>
+          <Text style={caption}>{t("model")}</Text>
+          <View style={{ flexShrink: 1, minWidth: 0 }}>
+            <Control label={t("selectModel", { model: model.name })} display={model.name} icon="ChevronDown" theme={theme}
+              variant="pageSize" expanded={choosing} onPress={() => setChoosing(true)} />
+          </View>
         </View>
-      </View>
+      ) : null}
       {data?.state === "ready" && data.limitedTo ? <Text style={caption}>{t("limited", { size: countFormat.format(data.limitedTo) })}</Text> : null}
       <View style={{ flexShrink: 1, minHeight: 0, borderWidth: 1, borderRadius: toolbarRadius, borderColor: colors.border, overflow: "hidden" }}>
-        {!compact ? (
+        {compact ? (
+          <CompactModelPicker model={model.name} theme={theme} expanded={choosing} onPress={() => setChoosing(true)} />
+        ) : (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: tableGutter + 1,
             paddingVertical: 10, backgroundColor: colors.surface1, borderBottomWidth: 1, borderBottomColor: colors.border }}>
             <Text style={[caption, { flex: 1.4 }]}>{t("supplier")}</Text>
@@ -637,7 +675,7 @@ function PerformanceComparison({ theme, compact, data, selectedModel, selectMode
             </View>
             <View style={{ width: 16 }} />
           </View>
-        ) : null}
+        )}
         <FlatList key={model.id} data={model.providers} keyExtractor={(item) => item.id} style={{ flexGrow: 0 }}
           renderItem={({ item, index }) => <ProviderComparisonRow row={item} model={model.name} theme={theme} compact={compact}
             last={index === model.providers.length - 1}
