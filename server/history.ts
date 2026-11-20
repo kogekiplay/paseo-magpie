@@ -16,6 +16,7 @@ const usagePage = z.object({
 const usageRow = z.object({
   t: z.iso.datetime({ offset: true }),
   agent: z.string(),
+  agentName: optionalText,
   source: z.string().optional(),
   provider: z.string().optional(),
   providerName: z.string().optional(),
@@ -136,18 +137,20 @@ function cacheHitOf(row: UsageRow) {
   if (prompt > 0) return read / prompt;
 }
 
-function sessionOf(row: UsageRow) {
-  return row.native_session || row.session;
+function sessionKey(provider: string, id: string) {
+  return JSON.stringify([provider, id]);
 }
 
-async function findHistorySessions(
-  list: SessionDirectory, rows: UsageRow[], provider: HistoryInput["agent"], secret?: string,
-) {
-  const ids = new Set(rows.map(sessionOf));
+function requestSessionKey(row: UsageRow) {
+  const id = row.native_session || row.session;
+  return row.agent && id ? sessionKey(row.agent, id) : undefined;
+}
+
+async function findHistorySessions(list: SessionDirectory, rows: UsageRow[], secret?: string) {
+  const wanted = new Set(rows.map(requestSessionKey));
   const sessions = new Map<string, HistorySession | undefined>();
-  ids.delete(undefined);
-  ids.delete("");
-  if (!ids.size) return sessions;
+  wanted.delete(undefined);
+  if (!wanted.size) return sessions;
   const cursors = new Set<string>();
   let cursor: string | undefined;
   do {
@@ -157,16 +160,17 @@ async function findHistorySessions(
       page: { limit: 200, cursor },
     });
     for (const { agent } of entries) {
-      const persisted = agent.persistence?.provider === provider ? agent.persistence : null;
-      const nativeIds = [
-        agent.runtimeInfo?.provider === provider ? agent.runtimeInfo.sessionId : null,
-        persisted?.sessionId,
-        persisted?.nativeHandle,
+      const identities = [
+        [agent.runtimeInfo?.provider, agent.runtimeInfo?.sessionId],
+        [agent.persistence?.provider, agent.persistence?.sessionId],
+        [agent.persistence?.provider, agent.persistence?.nativeHandle],
       ];
-      for (const id of nativeIds) {
-        if (!id || !ids.has(id)) continue;
-        const known = sessions.get(id);
-        sessions.set(id, !sessions.has(id) || known?.agentId === agent.id
+      for (const [provider, id] of identities) {
+        if (!provider || !id) continue;
+        const key = sessionKey(provider, id);
+        if (!wanted.has(key)) continue;
+        const known = sessions.get(key);
+        sessions.set(key, !sessions.has(key) || known?.agentId === agent.id
           ? { agentId: agent.id, title: safeLabel(agent.title ?? undefined, secret) }
           : undefined);
       }
@@ -178,9 +182,7 @@ async function findHistorySessions(
   return sessions;
 }
 
-export async function projectHistory(
-  body: unknown, agent: HistoryInput["agent"], secret?: string, list?: SessionDirectory,
-): Promise<HistoryOutput> {
+export async function projectHistory(body: unknown, secret?: string, list?: SessionDirectory): Promise<HistoryOutput> {
   const page = usagePage.safeParse(body);
   if (!page.success) return { state: "unavailable" };
   const { offset, total, accounts } = page.data;
@@ -189,23 +191,26 @@ export async function projectHistory(
     const decoded = usageRow.safeParse(value);
     if (!decoded.success) return [];
     // Keep this guard even when an older gateway ignores a query filter.
-    return decoded.data.agent === agent && !decoded.data.source ? [decoded.data] : [];
+    return !decoded.data.source ? [decoded.data] : [];
   });
   // An unavailable Paseo directory must not hide valid performance data.
-  const sessions = list ? await findHistorySessions(list, requests, agent, secret).catch(() => undefined) : undefined;
+  const sessions = list ? await findHistorySessions(list, requests, secret).catch(() => undefined) : undefined;
   const rows = requests.flatMap((row): HistoryRow[] => {
     const time = Date.parse(row.t);
     if (!Number.isSafeInteger(time) || time <= 0) return [];
     const outcome = row.canceled ? "canceled" : row.err || (row.status ?? 0) >= 400 ? "failed" : "completed";
     const speed = outcome === "completed" ? measureSpeed(row) : undefined;
-    const id = sessionOf(row);
-    const session = id ? sessions?.get(id) : undefined;
+    const key = requestSessionKey(row);
+    const session = key ? sessions?.get(key) : undefined;
+    const agentLabel = safeLabel(row.agentName, secret)
+      || (row.agent === "codex" ? "Codex" : row.agent === "claude" ? "Claude Code" : safeLabel(row.agent, secret));
     const account = displayAccount(row, accountNames, secret);
     const protocol = displayProtocol(row);
     const cacheHit = cacheHitOf(row);
     const requestedModel = safeLabel(row.req, secret);
     return [{
       time,
+      agent: agentLabel,
       provider: safeLabel(row.providerName || row.provider, secret),
       model: safeLabel(row.served, secret),
       ...(requestedModel ? { requestedModel } : {}),
@@ -229,13 +234,13 @@ export async function projectHistory(
 }
 
 export function createHistoryReader(loadConfig: () => Promise<MagpieConfig> = readConfig, request: typeof fetch = fetch) {
-  return async ({ period, agent, offset, limit = historyPageSizes[0] }: HistoryInput, list?: SessionDirectory): Promise<HistoryOutput> => {
+  return async ({ period, offset, limit = historyPageSizes[0] }: HistoryInput, list?: SessionDirectory): Promise<HistoryOutput> => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const config = await loadConfig();
       const url = new URL("v1/magpie/usage/requests", config.url);
-      url.search = new URLSearchParams({ period, agent, via: "through", offset: String(offset), limit: String(limit) }).toString();
+      url.search = new URLSearchParams({ period, via: "through", offset: String(offset), limit: String(limit) }).toString();
       timer = setTimeout(() => controller.abort(), config.timeoutMs);
       const response = await request(url, {
         headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
@@ -245,7 +250,7 @@ export function createHistoryReader(loadConfig: () => Promise<MagpieConfig> = re
       if (response.status === 401 || response.status === 403) return { state: "forbidden" };
       if (response.status === 404 || response.status === 405) return { state: "unsupported" };
       if (!response.ok) return { state: "unavailable" };
-      return projectHistory(await response.json(), agent, config.apiKey, list);
+      return projectHistory(await response.json(), config.apiKey, list);
     } catch {
       return { state: "unavailable" };
     } finally {

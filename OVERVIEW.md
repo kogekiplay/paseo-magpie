@@ -1,6 +1,6 @@
 Magpie displays gateway account quotas and balances in Paseo's native Usage entry, and the current session's actual model routing beside the composer. Providers with multiple accounts also get a total card. Comparable percentage windows are averaged within one plan; reported amounts and limits are added. Individual accounts remain available, while summary windows are preferred for the sidebar.
 
-Open **Magpie Usage** in the sidebar to compare first-token latency, total time, and tokens per second for Codex and Claude Code requests already recorded by your gateway.
+Open **Magpie Usage** in the sidebar to compare first-token latency, total time, and tokens per second across all agents in one chronological gateway history.
 
 The plugin runs on the Paseo daemon and reads Magpie's `/v1/magpie/quotas` and `/v1/magpie/route` endpoints. It uses `http://127.0.0.1:3425` by default. Magpie must be running on that host, or you can configure a different gateway address in the daemon machine's `~/.config/paseo-magpie/config.json`. A remote gateway may require an API key with permission to read quotas and session routes.
 

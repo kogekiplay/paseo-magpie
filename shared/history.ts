@@ -2,20 +2,19 @@ import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
 export const historyPeriods = ["today", "7d", "30d"] as const;
-export const historyAgents = ["codex", "claude"] as const;
 export const historyPageSizes = [30, 50, 100] as const;
 export const historyProtocols = ["Anthropic", "Responses", "Chat", "Gemini"] as const;
 export const historyAccessTypes = ["subscription", "api"] as const;
 
 export const historyInput = z.object({
   period: z.enum(historyPeriods),
-  agent: z.enum(historyAgents),
   offset: z.number().int().nonnegative().safe(),
   limit: z.literal(historyPageSizes).optional(),
 }).strict();
 
 const historyRow = z.object({
   time: z.number().int().positive().safe(),
+  agent: z.string(),
   provider: z.string(),
   model: z.string(),
   requestedModel: z.string().optional(),

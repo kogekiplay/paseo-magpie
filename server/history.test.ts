@@ -16,8 +16,7 @@ test("keeps gateway timing and separates measured speed, lower bounds and unavai
     { ...base, out: 1_200, flow_ms: 300 },
     { ...base, out: 1_200, err: "private upstream error" },
     { ...base, source: "log" },
-    { ...base, agent: "claude" },
-  ] }, "codex");
+  ] });
 
   assert.equal(result.state, "ready");
   assert.equal(result.offset, 30);
@@ -26,33 +25,45 @@ test("keeps gateway timing and separates measured speed, lower bounds and unavai
   ]);
   assert.equal(result.rows[5].outcome, "failed");
   assert.deepEqual(result.rows[0], {
-    time: Date.parse(base.t), provider: "Codex", model: "served-model", outcome: "completed",
+    time: Date.parse(base.t), agent: "Codex", provider: "Codex", model: "served-model", outcome: "completed",
     status: 200, outputTokens: 600, ttftMs: 8_700, durationMs: 12_000, speed: { tps: 600_000 / 3_300, lowerBound: false },
   });
 });
 
-test("reads a scoped page through the configured gateway and exposes only allowed fields", async () => {
+test("reads one gateway page across agents in ledger order and exposes only allowed fields", async () => {
   const config = async () => ({ url: "https://magpie.example/gateway/", apiKey: "private-key", timeoutMs: 1_000 });
   const read = createHistoryReader(config, async (url, init) => {
-    assert.equal(String(url), "https://magpie.example/gateway/v1/magpie/usage/requests?period=7d&agent=codex&via=through&offset=100&limit=100");
+    assert.equal(String(url), "https://magpie.example/gateway/v1/magpie/usage/requests?period=7d&via=through&offset=100&limit=100");
     assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer private-key");
     assert.equal(init?.redirect, "error");
-    return Response.json({ offset: 100, total: 101, rows: [
-      { ...base, served: "private-key", providerAccount: "private-account", session: "private-session", input: "private-prompt" },
+    return Response.json({ offset: 100, total: 106, rows: [
+      { ...base, agent: "custom-agent", agentName: " Lab\nAgent ", t: "2026-11-20T11:16:00+08:00", served: "private-key",
+        providerAccount: "private-account", session: "private-session", input: "private-prompt" },
+      { ...base, agent: "claude", agentName: "  ", providerName: "Same upstream", source: "" },
+      { ...base, agent: "opencode", providerName: "Same upstream" },
+      { ...base, agent: "private-key", agentName: 42 },
+      base,
+      { ...base, source: "local" },
     ] });
   });
-  const result = await read({ period: "7d", agent: "codex", offset: 100, limit: 100 });
+  const result = await read({ period: "7d", offset: 100, limit: 100 });
   assert.equal(result.state, "ready");
+  assert.equal(result.offset, 100);
+  assert.equal(result.total, 106);
+  assert.deepEqual(result.rows.map((row) => row.agent), ["Lab Agent", "Claude Code", "opencode", "[已隐藏]", "Codex"]);
+  assert.deepEqual(result.rows.map((row) => row.time), [Date.parse("2026-11-20T11:16:00+08:00"), ...Array(4).fill(Date.parse(base.t))]);
   assert.equal(result.rows[0].model, "[已隐藏]");
   assert.match(result.rows[0].account ?? "", /^#[a-f0-9]{6}$/);
   assert.doesNotMatch(JSON.stringify(result), /private-/);
   const denied = createHistoryReader(config, async () => new Response("private details", { status: 403 }));
-  assert.deepEqual(await denied({ period: "today", agent: "codex", offset: 0 }), { state: "forbidden" });
+  assert.deepEqual(await denied({ period: "today", offset: 0 }), { state: "forbidden" });
 });
 
 test("links only unique native sessions on the selected host and reads their current Paseo titles", async () => {
-  const body = { offset: 0, total: 5, rows: [
+  const body = { offset: 0, total: 7, rows: [
     { ...base, native_session: "native", session: "override", title: "Codex original title" },
+    { ...base, agent: "claude", native_session: "native" },
+    { ...base, agent: "opencode", native_session: "native" },
     { ...base, session: "archived" },
     { ...base, native_session: "duplicate" },
     { ...base, native_session: "unknown", session: "override" },
@@ -63,12 +74,14 @@ test("links only unique native sessions on the selected host and reads their cur
   });
   let title = "Paseo first title";
   const cursors: (string | undefined)[] = [];
-  const list: NonNullable<Parameters<typeof projectHistory>[3]> = async ({ filter, page }) => {
+  const list: NonNullable<Parameters<typeof projectHistory>[2]> = async ({ filter, page }) => {
     assert.deepEqual(filter, { includeArchived: true, includeBackground: true });
     cursors.push(page.cursor);
     return page.cursor ? {
       entries: [
         live("first", "native", title),
+        live("claude-shared", "native", "Claude shared ID", "claude"),
+        { agent: { id: "open", title: "OpenCode title", persistence: { provider: "opencode", sessionId: "native" } } },
         live("another-copy", "duplicate", "Second duplicate"),
         { agent: { id: "old", title: "Archived in Paseo", persistence: { provider: "codex", sessionId: "stored", nativeHandle: "archived" } } },
       ],
@@ -82,23 +95,24 @@ test("links only unique native sessions on the selected host and reads their cur
       pageInfo: { nextCursor: "second" },
     };
   };
-  const before = await projectHistory(body, "codex", undefined, list);
+  const before = await projectHistory(body, undefined, list);
   assert.equal(before.state, "ready");
   assert.equal(before.rows[0].session?.title, title);
   title = "Renamed in Paseo";
-  const after = await projectHistory(body, "codex", undefined, list);
+  const after = await projectHistory(body, undefined, list);
   assert.equal(after.state, "ready");
   assert.deepEqual(after.rows.map((row) => row.session), [
-    { agentId: "first", title }, { agentId: "old", title: "Archived in Paseo" }, undefined, undefined, undefined,
+    { agentId: "first", title }, { agentId: "claude-shared", title: "Claude shared ID" },
+    { agentId: "open", title: "OpenCode title" }, { agentId: "old", title: "Archived in Paseo" }, undefined, undefined, undefined,
   ]);
   assert.deepEqual(cursors, [undefined, "second", undefined, "second"]);
-  assert.doesNotMatch(JSON.stringify(after), /native_session|Codex original title|Wrong conversation/);
+  assert.doesNotMatch(JSON.stringify(after), /native|Codex original title|Wrong conversation/);
 });
 
 test("a Paseo directory error leaves Claude Code performance history available", async () => {
   const result = await projectHistory({
     offset: 0, total: 1, rows: [{ ...base, agent: "claude", native_session: "private-session" }],
-  }, "claude", undefined, async () => { throw new Error("private directory details"); });
+  }, undefined, async () => { throw new Error("private directory details"); });
   assert.equal(result.state, "ready");
   assert.equal(result.rows[0].ttftMs, 8_700);
   assert.equal(result.rows[0].session, undefined);
@@ -120,7 +134,7 @@ test("projects the Magpie ledger columns with their original usage and cost sema
       { ...base, in: 400, cache_read: 0, cache_write: 100, access: "unknown", ep: "/private/non-model", cost: 4 },
       { ...base, in: 0, cache_read: 0, cache_write: 0, ws: true, cost: -1, priced: true, credits: null },
     ],
-  }, "codex");
+  });
   assert.equal(result.state, "ready");
   const [priced, free, unknownCache, miss, emptyPrompt] = result.rows;
   assert.equal(priced.requestedModel, "auto/alias");

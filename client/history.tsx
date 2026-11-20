@@ -1,5 +1,5 @@
 /* Hallmark · v2.0.0 · scope: app · genre: modern-minimal · theme: Paseo · signature: request ledger */
-/* Hallmark · pre-emit critique: P4 H5 E4 S4 R5 V4 · weakest: E, test the same measurements in wide and compact panes */
+/* Hallmark · pre-emit critique: compact controls leave the request list more room while preserving touch targets. */
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import {
@@ -7,7 +7,7 @@ import {
   type PluginScreenProps, type PluginSidebarItemProps,
 } from "@getpaseo/plugin/client";
 import { Icon, Modal, SidebarRow, TextInput } from "@getpaseo/plugin/client/ui";
-import { getHistory, historyAgents, historyPageSizes, historyPeriods, type HistoryInput, type HistoryOutput, type HistoryPageSize, type HistoryRow } from "../shared/history.ts";
+import { getHistory, historyPageSizes, historyPeriods, type HistoryInput, type HistoryOutput, type HistoryPageSize, type HistoryRow } from "../shared/history.ts";
 import { magpieIcon } from "../shared/icon.ts";
 
 const messages = defineTranslations({
@@ -34,8 +34,7 @@ const messages = defineTranslations({
       jumpTo: "Go to page", jumpLabel: "Go to", jumpAction: "Go", pageUnit: "",
       metricHint: "Speed lower bound",
       details: "Details", hideDetails: "Hide details",
-      chooseAgent: "Choose agent", choosePeriod: "Choose date range",
-      agentFilter: "Choose agent. Current: {{agent}}", periodFilter: "Choose date range. Current: {{period}}",
+      choosePeriod: "Choose date range", periodFilter: "Choose date range. Current: {{period}}",
     },
     "zh-CN": {
       title: "Magpie 请求历史", sidebar: "Magpie 用量", today: "今天", "7d": "近 7 天", "30d": "近 30 天",
@@ -59,13 +58,11 @@ const messages = defineTranslations({
       jumpTo: "跳至页码", jumpLabel: "跳至", jumpAction: "跳页", pageUnit: "页",
       metricHint: "速度下界",
       details: "详情", hideDetails: "收起",
-      chooseAgent: "选择 Agent", choosePeriod: "选择日期范围",
-      agentFilter: "选择 Agent，当前 {{agent}}", periodFilter: "选择日期范围，当前 {{period}}",
+      choosePeriod: "选择日期范围", periodFilter: "选择日期范围，当前 {{period}}",
     },
   },
 });
 
-const agentLabels = { codex: "Codex", claude: "Claude Code" };
 const screenId = "request-history";
 type Theme = PluginScreenProps["theme"];
 
@@ -82,7 +79,9 @@ const columnSizes: Record<TableColumn, ViewStyle> = {
 const tableGutter = 14;
 const tableRowStyle = { flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: tableGutter } as const;
 const toolbarHeight = 38;
-const touchToolbarHeight = 44;
+const touchControlHeight = 44;
+const compactControlHeight = 34;
+const compactControlInset = (touchControlHeight - compactControlHeight) / 2;
 const toolbarRadius = 11;
 const footerHeight = 34;
 const footerRadius = 8;
@@ -92,48 +91,50 @@ const countFormat = new Intl.NumberFormat();
 const tokenFormat = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 const clockFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 
-function Control({ label, onPress, theme, selected, disabled, icon, segment, variant, display, expanded, touch }: {
+function Control({ label, onPress, theme, selected, disabled, icon, segment, variant, display, expanded, size }: {
   label: string; onPress: () => void; theme: Theme; selected?: boolean; disabled?: boolean;
   icon?: string;
-  segment?: "agent" | "period";
+  segment?: boolean;
   variant?: "refresh" | "pagination" | "page" | "pageSize" | "disclosure";
   display?: string;
   expanded?: boolean;
-  touch?: boolean;
+  size?: "touch" | "compact";
 }) {
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
-  const primary = selected && segment === "agent";
   const activePage = selected && variant === "page";
   const pagination = variant === "pagination" || variant === "page" || variant === "pageSize";
   const disclosure = variant === "disclosure";
   const quiet = variant === "pagination" || variant === "page" || disclosure;
-  const height = touch ? touchToolbarHeight : variant === "refresh" ? toolbarHeight
+  const height = size === "touch" ? touchControlHeight : size === "compact" ? compactControlHeight
+    : variant === "refresh" ? toolbarHeight
     : pagination ? footerHeight : segment ? toolbarHeight - 6 : 36;
-  const radius = variant === "refresh" ? toolbarRadius : pagination || quiet ? footerRadius : toolbarRadius - 4;
-  const textColor = primary ? colors.surface0 : activePage ? colors.accentForeground
+  const radius = size === "compact" || pagination || quiet ? footerRadius : variant === "refresh" ? toolbarRadius : toolbarRadius - 4;
+  const textColor = activePage ? colors.accentForeground
     : disclosure || (!selected && segment) ? colors.foregroundMuted : colors.foreground;
   return (
     <Pressable
       accessibilityRole="button" accessibilityLabel={label}
-      accessibilityState={{ selected, disabled, expanded }} disabled={disabled} onPress={onPress}
+      accessibilityState={{ selected, disabled }} aria-expanded={expanded} disabled={disabled} onPress={onPress}
       onFocus={(event) => {
         const target = event.currentTarget as unknown as { matches?: (selector: string) => boolean } | null;
         setFocused(target?.matches?.(":focus-visible") ?? true);
       }}
       onBlur={() => setFocused(false)}
       onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)}
-      hitSlop={touch ? 0 : segment ? { top: 4, bottom: 4, left: 0, right: 0 }
+      hitSlop={size === "touch" ? 0 : size === "compact" ? { top: compactControlInset, bottom: compactControlInset, left: 0, right: 0 }
+        : segment ? { top: 4, bottom: 4, left: 0, right: 0 }
         : pagination ? { top: 5, bottom: 5, left: 0, right: 0 } : 4}
       style={({ pressed }) => ({
-        minHeight: height, minWidth: height, alignItems: "center", justifyContent: "center",
+        minHeight: height, minWidth: size === "compact" && !display ? touchControlHeight : height,
+        alignItems: "center", justifyContent: "center",
         flexDirection: "row", gap: 6,
         paddingHorizontal: disclosure ? 8 : variant === "pageSize" ? 10 : icon || pagination ? 0 : 10,
         borderRadius: radius, borderWidth: 1,
-        borderColor: (focused && !disabled) || activePage ? colors.accent : primary ? colors.foreground
+        borderColor: (focused && !disabled) || activePage ? colors.accent
           : quiet ? "transparent" : selected || !segment ? colors.border : colors.surface1,
-        backgroundColor: primary ? colors.foreground : activePage ? colors.accent : selected ? colors.surface0
+        backgroundColor: activePage ? colors.accent : selected ? colors.surface0
           : pressed || (hovered && !disabled && !disclosure) ? colors.surface2 : quiet ? "transparent" : colors.surface1,
         opacity: disabled ? 0.48 : pressed ? 0.8 : 1,
       })}
@@ -215,8 +216,8 @@ function formatCacheHit(hit: number) {
   return `${percent.toFixed(2)}%`;
 }
 
-function RequestRow({ row, agent, theme, compact, dateFormat, openSession }: {
-  row: HistoryRow; agent: HistoryInput["agent"]; theme: Theme; compact: boolean; dateFormat: Intl.DateTimeFormat;
+function RequestRow({ row, theme, compact, dateFormat, openSession }: {
+  row: HistoryRow; theme: Theme; compact: boolean; dateFormat: Intl.DateTimeFormat;
   openSession?: (agentId: string) => void;
 }) {
   const { t } = useTranslation(messages);
@@ -299,7 +300,7 @@ function RequestRow({ row, agent, theme, compact, dateFormat, openSession }: {
         <Text style={[numeric, { color: colors.foreground, fontSize: 13 }]}>{clockFormat.format(date)}</Text>
         <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{dateFormat.format(date)}</Text>
       </View>,
-      agent: <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "500" }}>{agentLabels[agent]}</Text>,
+      agent: <Text selectable numberOfLines={2} style={{ color: colors.foreground, fontSize: 13, fontWeight: "500" }}>{row.agent || "—"}</Text>,
       session: source, requested: modelName(row.requestedModel), provider,
       model: modelName(row.model, true), status: statusText,
     };
@@ -314,6 +315,8 @@ function RequestRow({ row, agent, theme, compact, dateFormat, openSession }: {
     );
   }
   const meta = { color: colors.foregroundMuted, fontSize: 12 };
+  const agentAndProvider = row.agent && row.provider && row.agent !== row.provider
+    ? `${row.agent} / ${row.provider}` : row.agent || row.provider;
   return (
     <View style={{ paddingTop: 11, paddingBottom: 3, paddingHorizontal: tableGutter, gap: 5, borderBottomWidth: 1, borderBottomColor: colors.border }}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
@@ -321,7 +324,7 @@ function RequestRow({ row, agent, theme, compact, dateFormat, openSession }: {
           <Text selectable numberOfLines={2} style={{ color: colors.foreground, fontSize: 15, fontWeight: "600" }}>
             {row.model || "—"}
           </Text>
-          {row.provider ? <Text selectable numberOfLines={1} style={meta}>{row.provider}</Text> : null}
+          {agentAndProvider ? <Text selectable numberOfLines={1} style={meta}>{agentAndProvider}</Text> : null}
         </View>
         <View style={{ alignItems: "flex-end", gap: 2 }}>
           <Text style={[numeric, { color: colors.foreground, fontSize: 12 }]}>{clockFormat.format(date)}</Text>
@@ -334,7 +337,7 @@ function RequestRow({ row, agent, theme, compact, dateFormat, openSession }: {
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <View style={{ flex: 1, minWidth: 0 }}>{source}</View>
         <Control label={t(expanded ? "hideDetails" : "details")} display={t(expanded ? "hideDetails" : "details")}
-          icon={expanded ? "ChevronUp" : "ChevronDown"} theme={theme} variant="disclosure" touch expanded={expanded}
+          icon={expanded ? "ChevronUp" : "ChevronDown"} theme={theme} variant="disclosure" size="touch" expanded={expanded}
           onPress={() => setExpanded(!expanded)} />
       </View>
       {expanded ? (
@@ -390,12 +393,12 @@ function PageJump({ page, last, theme, compact, go }: {
         onSubmitEditing={submit}
         style={[numeric, {
           color: colors.foreground, width: Math.max(compact ? 44 : 48, String(last).length * 8 + 20),
-          height: compact ? touchToolbarHeight : footerHeight,
+          height: compact ? touchControlHeight : footerHeight,
           fontSize: 13, textAlign: "center", paddingVertical: 0, borderWidth: 1, borderRadius: footerRadius,
           borderColor: focused ? colors.accent : colors.border, backgroundColor: colors.surface0,
         }]}
       />
-      {compact ? <Control label={t("jumpAction")} icon="ArrowRight" theme={theme} variant="pagination" touch onPress={submit} />
+      {compact ? <Control label={t("jumpAction")} icon="ArrowRight" theme={theme} variant="pagination" size="touch" onPress={submit} />
         : t("pageUnit") ? <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>{t("pageUnit")}</Text> : null}
     </View>
   );
@@ -410,8 +413,8 @@ function HistoryPagination({ total, offset, limit, theme, compact, sizeOpen, set
   const last = Math.ceil(total / limit);
   const current = Math.min(last, Math.floor(offset / limit) + 1);
   const label = { color: colors.foregroundMuted, fontSize: 12 };
-  const nav = (key: "first" | "previous" | "next" | "last", icon: string, target: number, disabled: boolean) => (
-    <Control label={t(key)} icon={icon} theme={theme} variant="pagination" touch={compact}
+  const nav = (key: "first" | "previous" | "next" | "last", icon: string, target: number, disabled: boolean, size?: "touch" | "compact") => (
+    <Control label={t(key)} icon={icon} theme={theme} variant="pagination" size={size}
       disabled={disabled} onPress={() => go(target)} />
   );
   const totalText = <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[numeric, label]}>
@@ -421,15 +424,15 @@ function HistoryPagination({ total, offset, limit, theme, compact, sizeOpen, set
     return (
       <View style={{
         flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8,
-        paddingHorizontal: tableGutter, paddingVertical: 6,
+        paddingHorizontal: tableGutter,
         borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface0,
       }}>
         <View style={{ flexShrink: 1, minWidth: 0 }}>{totalText}</View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-          {nav("previous", "ChevronLeft", current - 1, current === 1)}
+        <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: compactControlInset }}>
+          {nav("previous", "ChevronLeft", current - 1, current === 1, "compact")}
           <Control label={t("pageOptions", { page: current, last })} display={t("pagePosition", { page: current, last })}
-            icon="ChevronDown" theme={theme} variant="pageSize" touch onPress={() => setSizeOpen(true)} />
-          {nav("next", "ChevronRight", current + 1, current === last)}
+            icon="ChevronDown" theme={theme} variant="pageSize" size="compact" expanded={sizeOpen} onPress={() => setSizeOpen(true)} />
+          {nav("next", "ChevronRight", current + 1, current === last, "compact")}
         </View>
         {sizeOpen ? (
           <Modal title={t("pagination")} open={sizeOpen} onOpenChange={setSizeOpen}>
@@ -440,15 +443,15 @@ function HistoryPagination({ total, offset, limit, theme, compact, sizeOpen, set
                   <View style={{ flexDirection: "row", gap: 8 }}>
                     {historyPageSizes.map((size) => (
                       <Control key={size} label={t("pageSizeValue", { size })} display={String(size)}
-                        theme={theme} variant="page" selected={limit === size} touch onPress={() => changeSize(size)} />
+                        theme={theme} variant="page" selected={limit === size} size="touch" onPress={() => changeSize(size)} />
                     ))}
                   </View>
                 </View>
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
                   <PageJump key={current} page={current} last={last} theme={theme} compact go={go} />
                   <View style={{ flexDirection: "row" }}>
-                    {nav("first", "ChevronsLeft", 1, current === 1)}
-                    {nav("last", "ChevronsRight", last, current === last)}
+                    {nav("first", "ChevronsLeft", 1, current === 1, "touch")}
+                    {nav("last", "ChevronsRight", last, current === last, "touch")}
                   </View>
                 </View>
               </View>
@@ -507,22 +510,19 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
   const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }), [locale]);
   const readHistory = useRpc(getHistory);
   const [period, setPeriod] = useState<HistoryInput["period"]>("today");
-  const [agent, setAgent] = useState<HistoryInput["agent"]>("codex");
   const [offset, setOffset] = useState(0);
   const [limit, setLimit] = useState<HistoryPageSize>(50);
   const [revision, setRevision] = useState(0);
   const [paneWidth, setPaneWidth] = useState(0);
-  const [menu, setMenu] = useState<"agent" | "period" | "pages">();
+  const [menu, setMenu] = useState<"period" | "pages">();
   const sizeOpen = menu === "pages";
   const setSizeOpen = (open: boolean) => setMenu(open ? "pages" : undefined);
-  const filter = `${period}:${agent}`;
-  const key = `${filter}:${offset}:${limit}:${revision}`;
-  const [result, setResult] = useState<{ key: string; filter: string; response: HistoryOutput }>();
+  const key = `${period}:${offset}:${limit}:${revision}`;
+  const [result, setResult] = useState<{ key: string; period: HistoryInput["period"]; response: HistoryOutput }>();
   const response = result?.key === key ? result.response : undefined;
   const refresh = () => { setOffset(0); setRevision((previous) => previous + 1); setMenu(undefined); };
   const go = (page: number) => { setOffset((page - 1) * limit); setMenu(undefined); };
   const changeSize = (size: HistoryPageSize) => { setLimit(size); setOffset(0); setMenu(undefined); };
-  const changeAgent = (value: HistoryInput["agent"]) => { setAgent(value); setOffset(0); setMenu(undefined); };
   const changePeriod = (value: HistoryInput["period"]) => { setPeriod(value); setOffset(0); setMenu(undefined); };
   const openSession = navigation ? (agentId: string) => navigation.openAgent({ agentId, serverId: host.id }) : undefined;
 
@@ -534,14 +534,14 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
         const lastOffset = Math.floor(Math.max(0, response.total - 1) / limit) * limit;
         if (offset > lastOffset) { setOffset(lastOffset); return; }
       }
-      setResult({ key, filter, response });
+      setResult({ key, period, response });
     };
-    void readHistory({ period, agent, offset, limit }).then(settle, () => settle({ state: "unavailable" }));
+    void readHistory({ period, offset, limit }).then(settle, () => settle({ state: "unavailable" }));
     return () => { current = false; };
-  }, [agent, filter, key, limit, offset, period, readHistory]);
+  }, [key, limit, offset, period, readHistory]);
 
   const page = response?.state === "ready" ? response : undefined;
-  const total = result?.filter === filter && result.response.state === "ready" ? result.response.total : 0;
+  const total = result?.period === period && result.response.state === "ready" ? result.response.total : 0;
   const colors = theme.colors;
   const compact = layout.compact || paneWidth < 820;
   const compactRows = layout.compact || paneWidth < 1050;
@@ -551,44 +551,33 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
     minHeight: toolbarHeight,
     backgroundColor: colors.surface1, borderRadius: toolbarRadius, borderWidth: 1, borderColor: colors.border,
   };
-  const agents = (
-    <View style={filterGroup}>
-      {historyAgents.map((value) => (
-        <Control key={value} label={agentLabels[value]} theme={theme} selected={agent === value} segment="agent"
-          onPress={() => changeAgent(value)} />
-      ))}
-    </View>
-  );
   const periods = (
     <View style={filterGroup}>
       {historyPeriods.map((value) => (
-        <Control key={value} label={t(value)} theme={theme} selected={period === value} segment="period"
+        <Control key={value} label={t(value)} theme={theme} selected={period === value} segment
           onPress={() => changePeriod(value)} />
       ))}
     </View>
   );
-  const reload = <Control label={t("reload")} theme={theme} icon="RefreshCw" onPress={refresh} variant="refresh" touch={compact} />;
+  const reload = <Control label={t("reload")} theme={theme} icon="RefreshCw" onPress={refresh} variant="refresh" size={compact ? "compact" : undefined} />;
   return (
     <View onLayout={({ nativeEvent }) => setPaneWidth(nativeEvent.layout.width)}
-      style={{ flex: 1, width: "100%", maxWidth: 1256, alignSelf: "center", backgroundColor: colors.surface0, paddingHorizontal: padding, paddingBottom: padding }}>
+      style={{ flex: 1, width: "100%", maxWidth: 1256, alignSelf: "center", backgroundColor: colors.surface0, paddingHorizontal: padding, paddingBottom: compact ? 0 : padding }}>
       {compact ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 5 }}>
-          <Control label={t("agentFilter", { agent: agentLabels[agent] })} display={agentLabels[agent]} icon="ChevronDown"
-            theme={theme} variant="pageSize" touch onPress={() => setMenu("agent")} />
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: compactControlInset }}>
           <Control label={t("periodFilter", { period: t(period) })} display={t(period)} icon="ChevronDown"
-            theme={theme} variant="pageSize" touch onPress={() => setMenu("period")} />
-          <View style={{ flex: 1 }} />
+            theme={theme} variant="pageSize" size="compact" expanded={menu === "period"} onPress={() => setMenu("period")} />
           {reload}
         </View>
       ) : (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 6 }}>
-          {agents}<View style={{ flex: 1 }} />{periods}{reload}
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 7, paddingVertical: 6 }}>
+          {periods}{reload}
         </View>
       )}
       <View style={{ flex: 1, minHeight: 0, borderWidth: compact ? 0 : 1, borderColor: colors.border, borderRadius: compact ? 0 : toolbarRadius }}>
         {page ? (
           <FlatList style={{ flex: 1 }} key={key} data={page.rows} contentContainerStyle={compact ? { paddingBottom: 8 } : undefined}
-            renderItem={({ item }) => <RequestRow row={item} agent={agent} theme={theme} compact={compactRows}
+            renderItem={({ item }) => <RequestRow row={item} theme={theme} compact={compactRows}
               dateFormat={dateFormat} openSession={openSession} />}
             keyExtractor={(item, index) => `${item.time}:${index}`}
             ListHeaderComponent={!compactRows && page.rows.length > 0 ? <TableHeading theme={theme} /> : undefined}
@@ -609,20 +598,15 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
         {total > 0 ? <HistoryPagination total={total} offset={offset} limit={limit} theme={theme} compact={compact}
           sizeOpen={sizeOpen} setSizeOpen={setSizeOpen} changeSize={changeSize} go={go} /> : null}
       </View>
-      {compact && (menu === "agent" || menu === "period") ? (
-        <Modal title={t(menu === "agent" ? "chooseAgent" : "choosePeriod")} open
+      {compact && menu === "period" ? (
+        <Modal title={t("choosePeriod")} open
           onOpenChange={(open) => { if (!open) setMenu(undefined); }}>
           <Modal.Content>
             <View style={{ gap: 6 }}>
-              {menu === "agent"
-                ? historyAgents.map((value) => (
-                  <Control key={value} label={agentLabels[value]} theme={theme} selected={agent === value} segment="agent" touch
-                    onPress={() => changeAgent(value)} />
-                ))
-                : historyPeriods.map((value) => (
-                  <Control key={value} label={t(value)} theme={theme} selected={period === value} segment="period" touch
-                    onPress={() => changePeriod(value)} />
-                ))}
+              {historyPeriods.map((value) => (
+                <Control key={value} label={t(value)} theme={theme} selected={period === value} segment size="touch"
+                  onPress={() => changePeriod(value)} />
+              ))}
             </View>
           </Modal.Content>
         </Modal>
