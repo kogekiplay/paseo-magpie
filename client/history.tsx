@@ -71,7 +71,8 @@ const columnSizes: Record<TableColumn, ViewStyle> = {
 };
 const tableGutter = 14;
 const tableRowStyle = { flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: tableGutter } as const;
-const toolbarHeight = 44;
+const toolbarHeight = 38;
+const touchToolbarHeight = 44;
 const toolbarRadius = 11;
 const footerHeight = 34;
 const footerRadius = 8;
@@ -96,7 +97,8 @@ function Control({ label, onPress, theme, selected, disabled, icon, compact, seg
   const primary = selected && segment === "agent";
   const activePage = selected && variant === "page";
   const pagination = variant === "pagination" || variant === "page" || variant === "pageSize";
-  const height = variant === "refresh" ? toolbarHeight : pagination ? footerHeight : segment ? toolbarHeight - 8 : 36;
+  const groupHeight = compact ? touchToolbarHeight : toolbarHeight;
+  const height = variant === "refresh" ? groupHeight : pagination ? footerHeight : segment ? groupHeight - (compact ? 8 : 6) : 36;
   const radius = variant === "refresh" ? toolbarRadius : pagination ? footerRadius : toolbarRadius - 4;
   const textColor = primary ? colors.surface0 : activePage ? colors.accentForeground
     : selected || !segment ? colors.foreground : colors.foregroundMuted;
@@ -111,7 +113,7 @@ function Control({ label, onPress, theme, selected, disabled, icon, compact, seg
         flex: segment && compact ? 1 : undefined,
         minHeight: height, minWidth: pagination && compact ? 29 : height, alignItems: "center", justifyContent: "center",
         flexDirection: "row", gap: 6,
-        paddingHorizontal: variant === "pageSize" ? 10 : icon || pagination ? 0 : compact ? 6 : 12,
+        paddingHorizontal: variant === "pageSize" ? 10 : icon || pagination ? 0 : compact ? 6 : 10,
         borderRadius: radius, borderWidth: 1,
         borderColor: focused || activePage ? colors.accent : primary ? colors.foreground
           : variant === "pagination" || variant === "page" ? "transparent" : selected || !segment ? colors.border : colors.surface1,
@@ -227,16 +229,16 @@ function RequestRow({ row, agent, theme, compact, openSession }: {
   const protocolLabel = protocol
     ? `${protocol.client ? `${protocol.client} → ` : ""}${protocol.upstream}${protocol.websocket ? " WS" : ""}`
     : undefined;
-  const providerMeta = { color: colors.foregroundMuted, fontSize: 10, paddingVertical: 1 };
   const provider = (
     <View style={{ gap: 2, minWidth: 0 }}>
       <Text selectable numberOfLines={1} style={{ color: colors.foreground, fontSize: 13, fontWeight: "600" }}>{row.provider || "—"}</Text>
       {row.account ? <Text selectable numberOfLines={1} style={{ color: colors.foregroundMuted, fontSize: 11 }}>{row.account}</Text> : null}
       {row.access || protocolLabel ? (
-        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4 }}>
-          {row.access ? <Text style={[providerMeta, { backgroundColor: colors.surface1, paddingHorizontal: 3, borderRadius: 4 }]}>{t(row.access)}</Text> : null}
-          {protocolLabel ? <Text numberOfLines={2} style={[providerMeta, { flexShrink: 1 }]}>{protocolLabel}</Text> : null}
-        </View>
+        <Text style={{ color: colors.foregroundMuted, fontSize: 10 }}>
+          {row.access ? <Text style={{ fontWeight: "600" }}>{t(row.access)}</Text> : null}
+          {row.access && protocolLabel ? "  " : null}
+          {protocolLabel}
+        </Text>
       ) : null}
     </View>
   );
@@ -466,8 +468,9 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
   const compactRows = layout.compact || paneWidth < 1050;
   const padding = compact ? 12 : 16;
   const filterGroup = {
-    flexDirection: "row" as const, alignItems: "center" as const, padding: 3, gap: 3,
-    minHeight: toolbarHeight, backgroundColor: colors.surface1, borderRadius: toolbarRadius, borderWidth: 1, borderColor: colors.border,
+    flexDirection: "row" as const, alignItems: "center" as const, padding: compact ? 3 : 2, gap: 3,
+    minHeight: compact ? touchToolbarHeight : toolbarHeight,
+    backgroundColor: colors.surface1, borderRadius: toolbarRadius, borderWidth: 1, borderColor: colors.border,
   };
   const agents = (
     <View style={[filterGroup, compact && { flex: 1 }]}>
@@ -485,17 +488,17 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
       ))}
     </View>
   );
-  const reload = <Control label={t("reload")} theme={theme} icon="RefreshCw" onPress={refresh} variant="refresh" />;
+  const reload = <Control label={t("reload")} theme={theme} icon="RefreshCw" onPress={refresh} variant="refresh" compact={compact} />;
   return (
     <View onLayout={({ nativeEvent }) => setPaneWidth(nativeEvent.layout.width)}
       style={{ flex: 1, width: "100%", maxWidth: 1256, alignSelf: "center", backgroundColor: colors.surface0, paddingHorizontal: padding, paddingBottom: padding }}>
       {compact ? (
-        <View style={{ gap: 8, paddingVertical: 12 }}>
+        <View style={{ gap: 6, paddingVertical: 7 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>{agents}{reload}</View>
           {periods}
         </View>
       ) : (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 6 }}>
           {agents}<View style={{ flex: 1 }} />{periods}{reload}
         </View>
       )}
