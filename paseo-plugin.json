@@ -5,11 +5,11 @@
   "media": [
     "assets/preview.png"
   ],
-  "description": "Show Magpie quotas and the actual model routing of the current session.",
+  "description": "Show Magpie quotas, actual model routing, and request performance history.",
   "translations": {
     "zh-CN": {
       "name": "Magpie",
-      "description": "查看 Magpie 账号额度、余额与当前会话的实际模型路由。"
+      "description": "查看 Magpie 账号额度、实际模型路由与历史请求性能。"
     }
   },
   "requirements": {
