@@ -1,7 +1,7 @@
 /* Hallmark · v2.0.0 · scope: app · genre: modern-minimal · theme: Paseo · signature: request ledger */
 /* Hallmark · pre-emit critique: P4 H5 E4 S4 R5 V4 · weakest: E, test the same measurements in wide and compact panes */
 import { useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, View, type TextStyle } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import {
   defineTranslations, useRpc, useTranslation, type PluginClientContext,
   type PluginScreenProps, type PluginSidebarItemProps,
@@ -14,7 +14,10 @@ const messages = defineTranslations({
   resources: {
     en: {
       title: "Magpie Request History", sidebar: "Magpie Usage", today: "Today", "7d": "7 days", "30d": "30 days",
-      time: "Time", route: "Model / provider", status: "Status", session: "Source session",
+      time: "Time", agent: "Agent", requested: "Requested model", provider: "Provider / account",
+      model: "Served model", input: "Input", output: "Output", cache: "Cache hit rate", cost: "Cost",
+      status: "Status", session: "Source session",
+      subscription: "Subscription", api: "API", credits: "credits", costHint: "Estimated cost in USD",
       untitled: "Untitled session", unmatched: "Unlinked", openSession: "Open session {{title}}",
       ttft: "First token", duration: "Total time", speed: "TPS",
       milliseconds: "ms", seconds: "s", tokens: "tok/s",
@@ -23,7 +26,6 @@ const messages = defineTranslations({
       forbidden: "The configured Magpie gateway did not grant access to request history.",
       unsupported: "This Magpie gateway does not expose request history.",
       unavailable: "Could not load Magpie request history.",
-      unknownProvider: "Unknown provider", unknownModel: "Unknown model",
       failed: "Failed", canceled: "Canceled",
       total: "{{total}} requests", pageSize: "Per page", pageSizeValue: "{{size}} per page",
       page: "Page {{page}}", currentPage: "Current page {{page}}",
@@ -32,7 +34,10 @@ const messages = defineTranslations({
     },
     "zh-CN": {
       title: "Magpie 请求历史", sidebar: "Magpie 用量", today: "今天", "7d": "近 7 天", "30d": "近 30 天",
-      time: "时间", route: "模型 / 供应商", status: "状态", session: "来源会话",
+      time: "时间", agent: "Agent", requested: "请求模型", provider: "供应商 / 账号",
+      model: "实际模型", input: "输入", output: "输出", cache: "缓存命中率", cost: "费用",
+      status: "状态", session: "来源会话",
+      subscription: "订阅账号", api: "API", credits: "积分", costHint: "估算费用（美元）",
       untitled: "未命名会话", unmatched: "未关联", openSession: "打开会话 {{title}}",
       ttft: "首字延迟", duration: "总耗时", speed: "TPS",
       milliseconds: "毫秒", seconds: "秒", tokens: "token/秒",
@@ -41,7 +46,6 @@ const messages = defineTranslations({
       forbidden: "当前 Magpie 网关未授予读取请求历史的权限。",
       unsupported: "当前 Magpie 网关没有提供请求历史接口。",
       unavailable: "无法读取 Magpie 请求历史。",
-      unknownProvider: "未知供应商", unknownModel: "未知模型",
       failed: "失败", canceled: "已取消",
       total: "共 {{total}} 条", pageSize: "每页", pageSizeValue: "每页 {{size}} 条",
       page: "第 {{page}} 页", currentPage: "当前第 {{page}} 页",
@@ -55,8 +59,18 @@ const agentLabels = { codex: "Codex", claude: "Claude Code" };
 const screenId = "request-history";
 type Theme = PluginScreenProps["theme"];
 
-const table = { time: 88, route: 1.8, session: 2.1, ttft: 1, duration: 1, speed: 1.15, status: 60 };
+const metricColumns = ["input", "output", "cache", "cost", "ttft", "duration", "speed"] as const;
+type MetricColumn = (typeof metricColumns)[number];
+const tableColumns = ["time", "agent", "session", "requested", "provider", "model", ...metricColumns, "status"] as const;
+type TableColumn = (typeof tableColumns)[number];
+const columnSizes: Record<TableColumn, ViewStyle> = {
+  time: { width: 68 }, agent: { width: 68 },
+  session: { flex: 1.35 }, requested: { flex: 1.3 }, provider: { flex: 1.95 }, model: { flex: 1.2 },
+  input: { width: 44 }, output: { width: 44 }, cache: { width: 75 }, cost: { width: 63 },
+  ttft: { width: 62 }, duration: { width: 59 }, speed: { width: 83 }, status: { width: 40 },
+};
 const tableGutter = 14;
+const tableRowStyle = { flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: tableGutter } as const;
 const toolbarHeight = 44;
 const toolbarRadius = 11;
 const footerHeight = 34;
@@ -64,6 +78,7 @@ const footerRadius = 8;
 const timingThresholds = { ttft: [5_000, 15_000], duration: [10_000, 30_000] } as const;
 const numeric: TextStyle = { fontVariant: ["tabular-nums"] };
 const countFormat = new Intl.NumberFormat();
+const tokenFormat = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 const clockFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 
@@ -115,16 +130,23 @@ function TableHeading({ theme }: { theme: Theme }) {
   const { t } = useTranslation(messages);
   const label = { color: theme.colors.foregroundMuted, fontSize: 12, fontWeight: "500" as const };
   return (
-    <View style={{ flexDirection: "row", gap: 12, paddingVertical: 10, paddingHorizontal: tableGutter, backgroundColor: theme.colors.surface1, borderTopLeftRadius: toolbarRadius - 1, borderTopRightRadius: toolbarRadius - 1, borderBottomWidth: 1, borderColor: theme.colors.border }}>
-      <Text style={[label, { width: table.time }]}>{t("time")}</Text>
-      <Text style={[label, { flex: table.route }]}>{t("route")}</Text>
-      <Text style={[label, { flex: table.session }]}>{t("session")}</Text>
-      {(["ttft", "duration", "speed"] as const).map((key) => (
-        <Text key={key} style={[label, { flex: table[key], textAlign: "right" }]} numberOfLines={1}>{t(key)}</Text>
+    <View style={[tableRowStyle, { paddingVertical: 10, backgroundColor: theme.colors.surface1, borderTopLeftRadius: toolbarRadius - 1, borderTopRightRadius: toolbarRadius - 1, borderBottomWidth: 1, borderColor: theme.colors.border }]}>
+      {tableColumns.map((column) => (
+        <View key={column} style={columnStyle(column)}>
+          <Text style={label} numberOfLines={2}>{t(column)}</Text>
+        </View>
       ))}
-      <Text style={[label, { width: table.status, textAlign: "right" }]}>{t("status")}</Text>
     </View>
   );
+}
+
+function isMetric(column: TableColumn): column is MetricColumn {
+  return metricColumns.some((metric) => metric === column);
+}
+
+function columnStyle(column: TableColumn): ViewStyle {
+  const size = columnSizes[column];
+  return { minWidth: 0, flexShrink: 0, ...size, alignItems: column === "status" || isMetric(column) ? "flex-end" : undefined };
 }
 
 function SourceSession({ session, theme, compact, openSession }: {
@@ -137,7 +159,7 @@ function SourceSession({ session, theme, compact, openSession }: {
   const title = session ? session.title || t("untitled") : t("unmatched");
   const textStyle = { fontSize: 12, color: session ? colors.foreground : colors.foregroundMuted };
   return (
-    <View style={{ flex: compact ? undefined : table.session, minWidth: 0 }}>
+    <View style={{ minWidth: 0 }}>
       {session && openSession ? (
         <Pressable accessibilityRole="link" accessibilityLabel={t("openSession", { title })}
           onPress={() => openSession(session.agentId)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
@@ -158,13 +180,28 @@ function SourceSession({ session, theme, compact, openSession }: {
   );
 }
 
-function RequestRow({ row, theme, compact, openSession }: {
-  row: HistoryRow; theme: Theme; compact: boolean; openSession?: (agentId: string) => void;
+function formatCost(cost: number) {
+  if (cost >= 1) return `$${cost.toFixed(2)}`;
+  if (cost === 0 || cost >= 0.001) return `$${cost.toFixed(3)}`;
+  const decimals = 1 - Math.floor(Math.log10(cost));
+  return `$${decimals <= 7 ? cost.toFixed(decimals) : cost.toExponential(1)}`;
+}
+
+function formatCacheHit(hit: number) {
+  const percent = Number((hit * 100).toFixed(2));
+  if (hit > 0 && percent === 0) return "0.01%";
+  if (hit < 1 && percent === 100) return "99.99%";
+  return `${percent.toFixed(2)}%`;
+}
+
+function RequestRow({ row, agent, theme, compact, openSession }: {
+  row: HistoryRow; agent: HistoryInput["agent"]; theme: Theme; compact: boolean; openSession?: (agentId: string) => void;
 }) {
   const { t } = useTranslation(messages);
   const colors = theme.colors;
   const status = row.status ? String(row.status) : row.outcome === "completed" ? "—" : t(row.outcome);
-  const statusColor = row.outcome === "failed" ? colors.statusDanger : colors.foregroundMuted;
+  const statusColor = row.outcome === "failed" ? colors.statusDanger
+    : row.outcome === "completed" && row.status && row.status < 400 ? colors.statusSuccess : colors.foregroundMuted;
   const date = new Date(row.time);
   const formatTime = (ms: number | undefined) => ms === undefined ? ["—"] : ms < 1_000
     ? [String(ms), t("milliseconds")] : [(ms / 1_000).toFixed(ms < 10_000 ? 1 : 0), t("seconds")];
@@ -173,59 +210,116 @@ function RequestRow({ row, theme, compact, openSession }: {
     if (ms < fast) return colors.statusSuccess;
     return ms < slow ? colors.statusWarning : colors.statusDanger;
   }
-  const metrics = [
-    { label: t("ttft"), reading: formatTime(row.ttftMs), color: timeColor(row.ttftMs, timingThresholds.ttft) },
-    { label: t("duration"), reading: formatTime(row.durationMs), color: timeColor(row.durationMs, timingThresholds.duration) },
-    {
-      label: t("speed"),
-      reading: row.speed ? [`${row.speed.lowerBound ? "≥" : ""}${Math.round(row.speed.tps)}`, t("tokens")] : ["—"],
-      color: row.speed ? colors.foreground : colors.foregroundMuted,
-    },
-  ];
-  const identity = (
-    <View style={{ flex: table.route, minWidth: 0, gap: 2 }}>
-      <Text selectable style={{ color: colors.foreground, fontSize: 14, fontWeight: "600" }}>{row.model || t("unknownModel")}</Text>
-      <Text selectable style={{ color: colors.foregroundMuted, fontSize: 12 }}>{row.provider || t("unknownProvider")}</Text>
+  const formatTokens = (value: number | undefined) => value === undefined ? "—" : tokenFormat.format(value);
+  const credits = row.credits === undefined ? undefined : `${countFormat.format(row.credits)} ${t("credits")}`;
+  const readCost = row.costUsd === undefined ? credits : formatCost(row.costUsd);
+  const costLabel = row.costUsd === undefined ? credits : `${t("costHint")} ${row.costUsd}${credits ? `, ${credits}` : ""}`;
+  const readings: Record<MetricColumn, { reading: string[]; color?: string; hint?: string }> = {
+    input: { reading: [formatTokens(row.inputTokens)], hint: row.inputTokens === undefined ? undefined : countFormat.format(row.inputTokens) },
+    output: { reading: [formatTokens(row.outputTokens)], hint: row.outputTokens === undefined ? undefined : countFormat.format(row.outputTokens) },
+    cache: { reading: [row.cacheHit === undefined ? "—" : formatCacheHit(row.cacheHit)] },
+    cost: { reading: [readCost ?? "—"], color: readCost ? colors.statusSuccess : undefined, hint: costLabel },
+    ttft: { reading: formatTime(row.ttftMs), color: timeColor(row.ttftMs, timingThresholds.ttft) },
+    duration: { reading: formatTime(row.durationMs), color: timeColor(row.durationMs, timingThresholds.duration) },
+    speed: { reading: row.speed ? [`${row.speed.lowerBound ? "≥" : ""}${Math.round(row.speed.tps)}`, t("tokens")] : ["—"] },
+  };
+  const protocol = row.protocol;
+  const protocolLabel = protocol
+    ? `${protocol.client ? `${protocol.client} → ` : ""}${protocol.upstream}${protocol.websocket ? " WS" : ""}`
+    : undefined;
+  const providerMeta = { color: colors.foregroundMuted, fontSize: 10, paddingVertical: 1 };
+  const provider = (
+    <View style={{ gap: 2, minWidth: 0 }}>
+      <Text selectable numberOfLines={1} style={{ color: colors.foreground, fontSize: 13, fontWeight: "600" }}>{row.provider || "—"}</Text>
+      {row.account ? <Text selectable numberOfLines={1} style={{ color: colors.foregroundMuted, fontSize: 11 }}>{row.account}</Text> : null}
+      {row.access || protocolLabel ? (
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4 }}>
+          {row.access ? <Text style={[providerMeta, { backgroundColor: colors.surface1, paddingHorizontal: 3, borderRadius: 4 }]}>{t(row.access)}</Text> : null}
+          {protocolLabel ? <Text numberOfLines={2} style={[providerMeta, { flexShrink: 1 }]}>{protocolLabel}</Text> : null}
+        </View>
+      ) : null}
     </View>
   );
   const timing = (
-    <View style={{ width: compact ? undefined : table.time, flexShrink: 0, alignItems: compact ? "flex-end" : "flex-start", gap: 2 }}>
+    <View style={{ flexShrink: 0, alignItems: compact ? "flex-end" : "flex-start", gap: 2 }}>
       <Text style={[numeric, { color: colors.foreground, fontSize: 13 }]}>{clockFormat.format(date)}</Text>
       <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{dateFormat.format(date)}</Text>
     </View>
   );
   const statusText = (
     <Text aria-label={row.status ? `HTTP ${row.status}${row.outcome === "completed" ? "" : `, ${t(row.outcome)}`}` : status}
-      style={[numeric, { color: statusColor, fontSize: 12, textAlign: "right", width: compact ? undefined : table.status }]}>
+      style={[numeric, { color: statusColor, fontSize: 12, textAlign: "right" }]}>
       {status}
     </Text>
   );
-  const values = metrics.map(({ label, reading: [value, unit], color }) => (
-    <View key={label} style={{ flex: 1, minWidth: 0, alignItems: compact ? "flex-start" : "flex-end", gap: 3 }}>
-      {compact ? <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{label}</Text> : null}
-      <Text selectable accessibilityLabel={value.startsWith("≥") ? `${t("metricHint")} ${value.slice(1)} ${unit}` : undefined}
-        style={[numeric, { color, fontSize: compact ? 16 : 14, fontWeight: "600" }]}>
-        {value}{unit ? <Text style={{ color: colors.foregroundMuted, fontSize: 11, fontWeight: "400" }}> {unit}</Text> : null}
-      </Text>
-    </View>
-  ));
+  function metric(column: MetricColumn) {
+    const { reading: [value, unit], color, hint } = readings[column];
+    const performance = column === "ttft" || column === "duration" || column === "speed";
+    const accessibilityLabel = value.startsWith("≥") ? `${t("metricHint")} ${value.slice(1)} ${unit}` : hint;
+    return (
+      <View key={column} style={compact ? { flex: 1, minWidth: 0, gap: 3 } : { alignItems: "flex-end" }}>
+        {compact ? <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{t(column)}</Text> : null}
+        <Text selectable accessibilityLabel={accessibilityLabel} numberOfLines={compact ? 2 : 1}
+          style={[numeric, { color: color ?? (value === "—" ? colors.foregroundMuted : colors.foreground), fontSize: compact && performance ? 16 : 13, fontWeight: performance ? "600" : "500" }]}>
+          {value}{unit ? <Text style={{ color: colors.foregroundMuted, fontSize: 10, fontWeight: "400" }}> {unit}</Text> : null}
+        </Text>
+        {column === "cost" && row.costUsd !== undefined && credits ? (
+          <Text numberOfLines={1} style={[numeric, { color: colors.foregroundMuted, fontSize: 10 }]}>{credits}</Text>
+        ) : null}
+      </View>
+    );
+  }
+  function modelName(model: string | undefined, served = false) {
+    return <Text selectable numberOfLines={2} style={{
+      color: model ? colors.foreground : colors.foregroundMuted, fontSize: 13, fontWeight: served ? "600" : "500",
+    }}>{model || "—"}</Text>;
+  }
+  const agentName = <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: compact ? "600" : "500" }}>{agentLabels[agent]}</Text>;
   const source = <SourceSession session={row.session} theme={theme} compact={compact} openSession={openSession} />;
 
   if (!compact) {
+    const cells = {
+      time: timing, agent: agentName, session: source, requested: modelName(row.requestedModel), provider,
+      model: modelName(row.model, true), status: statusText,
+    };
     return (
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, paddingHorizontal: tableGutter, minHeight: 54, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        {timing}{identity}{source}{values}{statusText}
+      <View style={[tableRowStyle, { paddingVertical: 8, minHeight: 56, borderBottomWidth: 1, borderBottomColor: colors.border }]}>
+        {tableColumns.map((column) => (
+          <View key={column} style={columnStyle(column)}>
+            {isMetric(column) ? metric(column) : cells[column]}
+          </View>
+        ))}
       </View>
     );
   }
   return (
-    <View style={{ paddingVertical: 10, paddingHorizontal: tableGutter, gap: 7, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
-        {identity}{timing}{statusText}
+    <View style={{ paddingVertical: 12, paddingHorizontal: tableGutter, gap: 9, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <View style={{ flex: 1 }}>{agentName}</View>{timing}{statusText}
       </View>
-      {source}
-      <View style={{ flexDirection: "row", gap: 10, paddingHorizontal: 10, paddingVertical: 7, backgroundColor: colors.surface1, borderRadius: 6 }}>
-        {values}
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+          <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{t("requested")}</Text>
+          {modelName(row.requestedModel)}
+        </View>
+        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+          <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{t("model")}</Text>
+          {modelName(row.model, true)}
+        </View>
+      </View>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+          <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{t("provider")}</Text>
+          {provider}
+        </View>
+        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+          <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{t("session")}</Text>
+          {source}
+        </View>
+      </View>
+      <View style={{ gap: 7, paddingHorizontal: 9, paddingVertical: 8, backgroundColor: colors.surface1, borderRadius: 6 }}>
+        <View style={{ flexDirection: "row", gap: 6 }}>{metricColumns.slice(0, 4).map(metric)}</View>
+        <View style={{ flexDirection: "row", gap: 6 }}>{metricColumns.slice(4).map(metric)}</View>
       </View>
     </View>
   );
@@ -369,7 +463,8 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
   const total = result?.filter === filter && result.response.state === "ready" ? result.response.total : 0;
   const colors = theme.colors;
   const compact = layout.compact || paneWidth < 820;
-  const padding = compact ? 12 : 24;
+  const compactRows = layout.compact || paneWidth < 1050;
+  const padding = compact ? 12 : 16;
   const filterGroup = {
     flexDirection: "row" as const, alignItems: "center" as const, padding: 3, gap: 3,
     minHeight: toolbarHeight, backgroundColor: colors.surface1, borderRadius: toolbarRadius, borderWidth: 1, borderColor: colors.border,
@@ -405,11 +500,12 @@ function HistoryList({ theme, layout, navigation, host }: PluginScreenProps) {
         </View>
       )}
       <View style={{ flex: 1, minHeight: 0, borderWidth: 1, borderColor: colors.border, borderRadius: toolbarRadius }}>
-        {!compact && total > 0 ? <TableHeading theme={theme} /> : null}
         {page ? (
           <FlatList style={{ flex: 1 }} key={key} data={page.rows}
-            renderItem={({ item }) => <RequestRow row={item} theme={theme} compact={compact} openSession={openSession} />}
+            renderItem={({ item }) => <RequestRow row={item} agent={agent} theme={theme} compact={compactRows} openSession={openSession} />}
             keyExtractor={(item, index) => `${item.time}:${index}`}
+            ListHeaderComponent={!compactRows && page.rows.length > 0 ? <TableHeading theme={theme} /> : undefined}
+            stickyHeaderIndices={!compactRows && page.rows.length > 0 ? [0] : undefined}
             ListEmptyComponent={<Text style={{ color: colors.foregroundMuted, padding: tableGutter }}>{t("empty")}</Text>} />
         ) : (
           <View style={{ flex: 1, alignItems: "center", paddingVertical: 28, gap: 8 }}>
